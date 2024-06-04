@@ -94,7 +94,21 @@ spec:
       runAfter: 
         - git-clone-internal-repo
         - wildfly-glow-build
+#    - name: check-helm-release
+#      taskRef:
+#        name: openshift-client
+#        kind: ClusterTask
+#      runAfter:
+#        - git-create-branch-and-push
+#      params:
+#      - name: SCRIPT
+#        value: |
+#          oc set image-lookup $(params.imageName)
     - name: helm-install
+#      when:
+#      - input: "$(tasks.check-helm-release.results.needInstall)"
+#        operator: in
+#        values: ["true"]
       taskRef:
         name: wildfly-helm-task
       params:

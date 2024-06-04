@@ -15,11 +15,20 @@ spec:
     - name: helm-install
       securityContext:
         runAsUser: 0
-      image: "docker.io/lachlanevenson/k8s-helm@sha256:5c792f29950b388de24e7448d378881f68b3df73a7b30769a6aa861061fd08ae"
+      image: "image-registry.openshift-image-registry.svc:5000/openshift/cli:latest"
       env:
         - name: WORKSPACE_SRC_PATH
           value: $(workspaces.sources.path)
       script: |
-        helm repo add wildfly https://docs.wildfly.org/wildfly-charts/
-        echo installing helm chart...
-        helm install $(params.releaseName) -f "$WORKSPACE_SRC_PATH/$(params.helmFile)" wildfly/wildfly
+        curl --insecure https://get.helm.sh/helm-v3.15.1-linux-amd64.tar.gz -LO
+        tar xvfz helm-v3.15.1-linux-amd64.tar.gz
+        ./linux-amd64/helm repo add wildfly https://docs.wildfly.org/wildfly-charts/
+        relName=$(params.releaseName)
+        ret="$(./linux-amd64/helm status $relName)"
+        if [ $? == 0 ]; then
+          echo starting a new build
+          oc start-build $relName-build-artifacts
+        else
+          echo installing helm chart...
+          ./linux-amd64/helm install $(params.releaseName) -f "$WORKSPACE_SRC_PATH/$(params.helmFile)" wildfly/wildfly
+        fi
