@@ -1,0 +1,24 @@
+apiVersion: tekton.dev/v1
+kind: PipelineRun
+metadata:
+  generateName: demo-run
+spec:
+  workspaces:
+  - name: shared-data
+    subPath: sources
+    persistentVolumeClaim:
+      claimName: glow-pipeline-data
+  - name: internal-repo
+    subPath: internal-repo
+    persistentVolumeClaim:
+      claimName: glow-pipeline-data
+  - name: ssh-creds
+    secret:
+        secretName: my-ssh-credentials
+  pipelineRef:
+    name: wildfly-glow-pipeline
+  params:
+    - name: gitUrl
+      value: "http://github.com/jfdenise/my-war"
+    - name: gitRevision
+      value: "main"

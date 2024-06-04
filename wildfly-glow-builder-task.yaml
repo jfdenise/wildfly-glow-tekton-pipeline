@@ -1,0 +1,84 @@
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: wildfly-glow-builder-task
+spec:
+  params:
+   - name: gitUrl
+     type: string
+   - name: gitRevision
+     type: string
+     default: ""
+  results:
+    - name: gitUrl
+      description: The created repo URL
+    - name: gitRevision
+      description: The created branch
+  workspaces:
+    - name: sources
+      description: The src dir
+    - name: ssh
+      description: for testing purpose
+  steps:
+    - name: generate-provisioning
+      securityContext:
+        runAsUser: 0
+      image: "quay.io/wildfly/wildfly-runtime:latest"
+      env:
+        - name: WORKSPACE_SRC_PATH
+          value: $(workspaces.sources.path)
+        - name: WORKSPACE_SSH_PATH
+          value: $(workspaces.ssh.path)
+      script: |
+        #!/usr/bin/env bash
+        set -eu
+        ls -l $WORKSPACE_SSH_PATH/
+        cat $WORKSPACE_SSH_PATH/id_ed25519
+        #war are located at the root of the src dir
+        srcDir="$WORKSPACE_SRC_PATH/cloned-repo"
+        deployment=""
+        ls -l $WORKSPACE_SRC_PATH
+        echo " then in cloned-repo"
+        ls -l $srcDir
+        files=`ls $srcDir/*.*`
+        deployment=""
+        rm -rf $WORKSPACE_SRC_PATH/wildfly-glow
+        mkdir -p $WORKSPACE_SRC_PATH/wildfly-glow
+        for eachfile in $files
+        do
+            deployment="$deployment $eachfile"
+            cp $eachfile $WORKSPACE_SRC_PATH/wildfly-glow
+        done
+        echo DEP $deployment
+        if [ -n "${deployment}" ]; then
+            echo DEP2 $deployment
+            echo "Retrieving WildFly Glow"            
+            curl --insecure https://github.com/wildfly/wildfly-glow/releases/download/1.0.5.Final/wildfly-glow-1.0.5.Final.zip -LO
+            unzip wildfly-glow*.zip -d .
+            glowDir=`find $PWD -type d -iname "wildfly-glow*"`
+            $glowDir/wildfly-glow scan $deployment --cloud --provision provisioning_xml --output-dir galleon
+            rm -rf $glowDir
+            if [ $? == 0 ]; then
+                echo "Good to go to OpenShift!"                
+                mv galleon $WORKSPACE_SRC_PATH/wildfly-glow
+                # Branch from the url+revision
+                md5sum $srcDir/* > checksums.txt
+                md5Git=(`echo -n "$(params.gitUrl)#$(params.gitRevision)" | md5sum`)
+                echo "$md5Git $(params.gitUrl)#$(params.gitRevision)\n" >> checksums.txt
+                md5Prov=(`md5sum $WORKSPACE_SRC_PATH/wildfly-glow/galleon/provisioning.xml`)
+                echo "md5Prov galleon/provisioning.xml\n" >> checksums.txt
+                md5=(`md5sum checksums.txt`)
+                mv checksums.txt $WORKSPACE_SRC_PATH/wildfly-glow
+                echo -n "https://github.com/jfdenise/go-to-openshift" > $(results.gitUrl.path)
+                echo -n "app-$md5Git" > $(results.gitRevision.path)
+                ls -l $WORKSPACE_SRC_PATH/wildfly-glow
+            else
+                echo "Error while scanning the deployment!"
+                cat tmp/output.txt
+                exit 1
+            fi
+        else
+            echo DEP3 $deployment
+            echo "No deployment to scan!"
+            exit 1
+        fi

@@ -1,0 +1,105 @@
+apiVersion: tekton.dev/v1
+kind: Pipeline
+metadata:
+  name: wildfly-glow-pipeline
+spec:
+  params:
+    - name: gitUrl
+    - name: gitRevision
+      default: ""
+  workspaces:
+    - name: shared-data
+    - name: ssh-creds
+    - name: internal-repo
+  tasks:
+    - name: git-clone-user-repo
+      taskRef:
+        name: git-clone
+        kind: ClusterTask
+      workspaces:
+        - name: output
+          workspace: shared-data
+      params:
+        - name: url
+          value: "$(params.gitUrl)"
+        - name: revision
+          value: "$(params.gitRevision)"
+        - name: subdirectory
+          value: cloned-repo
+    - name: wildfly-glow-build
+      taskRef:
+        name: wildfly-glow-builder-task
+      params:
+        - name: gitUrl
+          value: "$(params.gitUrl)"
+        - name: gitRevision
+          value: "$(params.gitRevision)"
+      workspaces:
+        - name: sources
+          workspace: shared-data
+        - name: ssh
+          workspace: ssh-creds
+      runAfter: 
+        - git-clone-user-repo
+    - name: git-clone-internal-repo
+      taskRef:
+        name: git-clone
+        kind: ClusterTask
+      workspaces:
+        - name: output
+          workspace: internal-repo
+        - name: ssh-directory
+          workspace: ssh-creds
+      params:
+        - name: url
+          value: "git@github.com:jfdenise/go-to-openshift"
+        - name: revision
+          value: "main"
+        - name: userHome
+          value: "/home/git"
+    - name: git-create-branch-and-push
+      taskRef:
+        name: git-cli
+        kind: ClusterTask
+      params:
+        - name: GIT_USER_NAME
+          value: jfdenise
+        - name: GIT_USER_EMAIL
+          value: jfdenise@gmail.com
+        - name: GIT_SCRIPT
+          value: |
+           #mkdir tmp
+           #cd tmp
+           #echo "Cloning for fun"
+           #GIT_SSH_COMMAND="ssh -v -o PasswordAuthentication=no"  git clone git@github.com:jfdenise/go-to-openshift
+           #cd ..
+           ls -al .
+           git config --global --add safe.directory /workspace/source
+           rev=$(tasks.wildfly-glow-build.results.gitRevision)
+           exists=`git ls-remote --heads git@github.com:jfdenise/go-to-openshift "refs/heads/${rev}" | wc -l`
+           echo EXIST $exists
+           if [ "${exists}" = "1" ]; then
+             echo "A branch already exists"
+             git fetch origin "$(tasks.wildfly-glow-build.results.gitRevision)"
+             git checkout "$(tasks.wildfly-glow-build.results.gitRevision)"
+           else
+             git checkout -b "$(tasks.wildfly-glow-build.results.gitRevision)"
+           fi
+           cp -r $(workspaces.input.path)/wildfly-glow/* .
+           if [ -n "$(git status --porcelain)" ]; then
+             git add *
+             git commit -m "Commit from WildFly Glow pipeline"
+             git push origin "$(tasks.wildfly-glow-build.results.gitRevision)"
+           else
+             echo "No changes to commit";
+           fi
+      workspaces:
+        - name: source
+          workspace: internal-repo
+        - name: input
+          workspace: shared-data
+        - name: ssh-directory
+          workspace: ssh-creds
+      runAfter: 
+        - git-clone-internal-repo
+        - wildfly-glow-build
