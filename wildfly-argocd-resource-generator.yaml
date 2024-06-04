@@ -1,0 +1,57 @@
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: wildfly-argocd-resource-generator-task
+spec:
+  params:
+   - name: gitRepo
+     type: string
+   - name: gitRevision
+     type: string
+     default: ""
+   - name: contextDir
+     type: string
+   - name: appName
+     type: string
+   - name: userProject
+     type: string
+  workspaces:
+    - name: sources
+      description: The src dir
+  steps:
+    - name: generate
+      securityContext:
+        runAsUser: 0
+      image: "redhat/ubi8-minimal"
+      env:
+        - name: WORKSPACE_SRC_PATH
+          value: $(workspaces.sources.path)/$(params.contextDir)
+      script: |
+        #!/usr/bin/env bash
+        mkdir -p "$WORKSPACE_SRC_PATH/deployment-git-repo/resources"
+        if [ -n "$(params.userProject)" ]; then
+          echo "apiVersion: argoproj.io/v1alpha1" > "$WORKSPACE_SRC_PATH/deployment-git-repo/argocd.yaml"
+          echo "kind: Application" >> "$WORKSPACE_SRC_PATH/deployment-git-repo/argocd.yaml"
+          echo "metadata:" >> "$WORKSPACE_SRC_PATH/deployment-git-repo/argocd.yaml"
+          echo "  name: $appName" >> "$WORKSPACE_SRC_PATH/deployment-git-repo/argocd.yaml"
+          echo "  namespace: openshift-gitops" >> "$WORKSPACE_SRC_PATH/deployment-git-repo/argocd.yaml"
+          echo "spec:" >> "$WORKSPACE_SRC_PATH/deployment-git-repo/argocd.yaml"
+          echo "  destination:" >> "$WORKSPACE_SRC_PATH/deployment-git-repo/argocd.yaml"
+          echo "    namespace: $(params.userProject)" >> "$WORKSPACE_SRC_PATH/deployment-git-repo/argocd.yaml"
+          echo "    server: https://kubernetes.default.svc" >> "$WORKSPACE_SRC_PATH/deployment-git-repo/argocd.yaml"
+          echo "  project: default" >> "$WORKSPACE_SRC_PATH/deployment-git-repo/argocd.yaml"
+          echo "  source: " >> "$WORKSPACE_SRC_PATH/deployment-git-repo/argocd.yaml"
+          echo "    path: resources" >> "$WORKSPACE_SRC_PATH/deployment-git-repo/argocd.yaml"
+          echo "    repoURL: https://$(params.gitRepo)" >> "$WORKSPACE_SRC_PATH/deployment-git-repo/argocd.yaml"
+          if [ -n $(params.gitRevision) ]; then
+            echo "    targetRevision: $(params.gitRevision)" >> "$WORKSPACE_SRC_PATH/deployment-git-repo/argocd.yaml"
+          fi
+          echo "  syncPolicy: " >> "$WORKSPACE_SRC_PATH/deployment-git-repo/argocd.yaml"
+          echo "    automated:" >> "$WORKSPACE_SRC_PATH/deployment-git-repo/argocd.yaml"
+          echo "      prune: true" >> "$WORKSPACE_SRC_PATH/deployment-git-repo/argocd.yaml"
+          echo "      selfHeal: false" >> "$WORKSPACE_SRC_PATH/deployment-git-repo/argocd.yaml"
+          echo "    syncOptions:" >> "$WORKSPACE_SRC_PATH/deployment-git-repo/argocd.yaml"
+          echo "    - CreateNamespace=false" >> "$WORKSPACE_SRC_PATH/deployment-git-repo/argocd.yaml"
+          
+          echo "Argo CD Application file created in $WORKSPACE_SRC_PATH/deployment-git-repo/argocd.yaml"
+        fi

@@ -1,0 +1,33 @@
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: wildfly-deploy-task
+spec:
+  params:
+    - name: contextDir
+      description: Context dir
+    - name: gitopsProject
+      description: GitOps project
+  workspaces:
+    - name: internal-deployment-repo
+      description: The internal deployment repo    
+  steps:
+    - name: deploy
+      securityContext:
+        runAsUser: 0
+      image: "image-registry.openshift-image-registry.svc:5000/openshift/cli:latest"
+      script: |
+        if [ -n "$(params.gitopsProject)" ]; then
+          oc project $(params.gitopsProject)
+          oc project
+          oc apply -f $(workspaces.internal-deployment-repo.path)/$(params.contextDir)/argocd.yaml
+          echo "ArgoCD application has been created"
+        else
+          files=`ls $(workspaces.internal-deployment-repo.path)/$(params.contextDir)/resources/*.yaml`
+          for eachfile in $files
+          do
+            oc apply -f "$eachfile"
+          done
+          echo "Application has been deployed"
+        fi
+        

@@ -1,0 +1,34 @@
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: wildfly-provision-task
+spec:
+  params:
+   - name: contextDir
+     type: string
+   - name: contentLocation
+     type: string
+   - name: targetDirectory
+     type: string
+  workspaces:
+    - name: sources
+      description: The src dir
+  steps:
+    - name: provision
+      securityContext:
+        runAsUser: 0
+      image: "quay.io/wildfly/wildfly-runtime:latest"
+      env:
+        - name: WORKSPACE_SRC_PATH
+          value: $(workspaces.sources.path)/$(params.contextDir)
+      script: |
+        #!/usr/bin/env bash
+        set -eu        
+        echo "Retrieving Galleon to provision"
+        curl --insecure https://github.com/wildfly/galleon/releases/download/6.0.0.Final/galleon-6.0.0.Final.zip -LO
+        unzip galleon*.zip -d .
+        galleonCLIDir="$PWD/galleon-6.0.0.Final"
+        galleonDir="$WORKSPACE_SRC_PATH/$(params.contentLocation)/galleon"
+        # provision server
+        $galleonCLIDir/bin/galleon.sh provision "$galleonDir/provisioning.xml" --dir="$WORKSPACE_SRC_PATH/$(params.targetDirectory)/server"
+        echo Server provisioned in "$WORKSPACE_SRC_PATH/$(params.targetDirectory)"
