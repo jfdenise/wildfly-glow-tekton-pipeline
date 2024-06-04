@@ -37,8 +37,6 @@ spec:
       workspaces:
         - name: sources
           workspace: shared-data
-        - name: ssh
-          workspace: ssh-creds
       runAfter: 
         - git-clone-user-repo
     - name: git-clone-internal-repo
@@ -68,16 +66,9 @@ spec:
           value: jfdenise@gmail.com
         - name: GIT_SCRIPT
           value: |
-           #mkdir tmp
-           #cd tmp
-           #echo "Cloning for fun"
-           #GIT_SSH_COMMAND="ssh -v -o PasswordAuthentication=no"  git clone git@github.com:jfdenise/go-to-openshift
-           #cd ..
-           ls -al .
            git config --global --add safe.directory /workspace/source
            rev=$(tasks.wildfly-glow-build.results.gitRevision)
            exists=`git ls-remote --heads git@github.com:jfdenise/go-to-openshift "refs/heads/${rev}" | wc -l`
-           echo EXIST $exists
            if [ "${exists}" = "1" ]; then
              echo "A branch already exists"
              git fetch origin "$(tasks.wildfly-glow-build.results.gitRevision)"
@@ -85,7 +76,7 @@ spec:
            else
              git checkout -b "$(tasks.wildfly-glow-build.results.gitRevision)"
            fi
-           cp -r $(workspaces.input.path)/wildfly-glow/* .
+           cp -r $(workspaces.input.path)/$(tasks.wildfly-glow-build.results.contentLocation)/* .
            if [ -n "$(git status --porcelain)" ]; then
              git add *
              git commit -m "Commit from WildFly Glow pipeline"

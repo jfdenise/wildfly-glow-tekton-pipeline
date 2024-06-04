@@ -10,15 +10,13 @@ spec:
      type: string
      default: ""
   results:
-    - name: gitUrl
-      description: The created repo URL
     - name: gitRevision
-      description: The created branch
+      description: The branch to create
+    - name: contentLocation
+      description: Where the generated content has been put
   workspaces:
     - name: sources
       description: The src dir
-    - name: ssh
-      description: for testing purpose
   steps:
     - name: generate-provisioning
       securityContext:
@@ -27,19 +25,11 @@ spec:
       env:
         - name: WORKSPACE_SRC_PATH
           value: $(workspaces.sources.path)
-        - name: WORKSPACE_SSH_PATH
-          value: $(workspaces.ssh.path)
       script: |
         #!/usr/bin/env bash
         set -eu
-        ls -l $WORKSPACE_SSH_PATH/
-        cat $WORKSPACE_SSH_PATH/id_ed25519
         #war are located at the root of the src dir
         srcDir="$WORKSPACE_SRC_PATH/cloned-repo"
-        deployment=""
-        ls -l $WORKSPACE_SRC_PATH
-        echo " then in cloned-repo"
-        ls -l $srcDir
         files=`ls $srcDir/*.*`
         deployment=""
         rm -rf $WORKSPACE_SRC_PATH/wildfly-glow
@@ -49,9 +39,7 @@ spec:
             deployment="$deployment $eachfile"
             cp $eachfile $WORKSPACE_SRC_PATH/wildfly-glow
         done
-        echo DEP $deployment
         if [ -n "${deployment}" ]; then
-            echo DEP2 $deployment
             echo "Retrieving WildFly Glow"            
             curl --insecure https://github.com/wildfly/wildfly-glow/releases/download/1.0.5.Final/wildfly-glow-1.0.5.Final.zip -LO
             unzip wildfly-glow*.zip -d .
@@ -65,12 +53,14 @@ spec:
                 md5sum $srcDir/* > checksums.txt
                 md5Git=(`echo -n "$(params.gitUrl)#$(params.gitRevision)" | md5sum`)
                 echo "$md5Git $(params.gitUrl)#$(params.gitRevision)\n" >> checksums.txt
-                md5Prov=(`md5sum $WORKSPACE_SRC_PATH/wildfly-glow/galleon/provisioning.xml`)
+                md5Prov=`md5sum "$WORKSPACE_SRC_PATH/wildfly-glow/galleon/provisioning.xml"`
                 echo "md5Prov galleon/provisioning.xml\n" >> checksums.txt
-                md5=(`md5sum checksums.txt`)
+                md5=`md5sum checksums.txt`
                 mv checksums.txt $WORKSPACE_SRC_PATH/wildfly-glow
-                echo -n "https://github.com/jfdenise/go-to-openshift" > $(results.gitUrl.path)
-                echo -n "app-$md5Git" > $(results.gitRevision.path)
+                echo -n "wildfly-glow" > $(results.contentLocation.path)
+                gitId=$(params.gitUrl)/revision/$(params.gitRevision)
+                newBranch=`tr -s :@#/ _ <<< "$gitId"`
+                echo -n "$newBranch" > $(results.gitRevision.path)
                 ls -l $WORKSPACE_SRC_PATH/wildfly-glow
             else
                 echo "Error while scanning the deployment!"
@@ -78,7 +68,6 @@ spec:
                 exit 1
             fi
         else
-            echo DEP3 $deployment
             echo "No deployment to scan!"
             exit 1
         fi
