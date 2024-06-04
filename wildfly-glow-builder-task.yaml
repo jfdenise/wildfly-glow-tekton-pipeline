@@ -14,6 +14,8 @@ spec:
       description: The branch to create
     - name: contentLocation
       description: Where the generated content has been put
+    - name: appName
+      description: The name of the application
   workspaces:
     - name: sources
       description: The src dir
@@ -37,30 +39,35 @@ spec:
         for eachfile in $files
         do
             deployment="$deployment $eachfile"
-            cp $eachfile $WORKSPACE_SRC_PATH/wildfly-glow
         done
         if [ -n "${deployment}" ]; then
             echo "Retrieving WildFly Glow"            
-            curl --insecure https://github.com/wildfly/wildfly-glow/releases/download/1.0.5.Final/wildfly-glow-1.0.5.Final.zip -LO
+            curl --insecure https://repository.jboss.org/nexus/content/repositories/snapshots/org/wildfly/glow/wildfly-glow/1.0.7.Final-SNAPSHOT/wildfly-glow-1.0.7.Final-20240604.172644-1.zip -LO
             unzip wildfly-glow*.zip -d .
             glowDir=`find $PWD -type d -iname "wildfly-glow*"`
-            $glowDir/wildfly-glow scan $deployment --cloud --provision provisioning_xml --output-dir galleon
+            $glowDir/wildfly-glow scan $deployment --cloud --provision openshift_resources --output-dir scan_result
             rm -rf $glowDir
             if [ $? == 0 ]; then
-                echo "Good to go to OpenShift!"                
-                mv galleon $WORKSPACE_SRC_PATH/wildfly-glow
+                echo "Good to go to OpenShift!"
+
+                mv scan_result/* $WORKSPACE_SRC_PATH/wildfly-glow
                 # Branch from the url+revision
                 md5sum $srcDir/* > checksums.txt
                 md5Git=(`echo -n "$(params.gitUrl)#$(params.gitRevision)" | md5sum`)
                 echo "$md5Git $(params.gitUrl)#$(params.gitRevision)\n" >> checksums.txt
                 md5Prov=`md5sum "$WORKSPACE_SRC_PATH/wildfly-glow/galleon/provisioning.xml"`
-                echo "md5Prov galleon/provisioning.xml\n" >> checksums.txt
+                echo "$md5Prov galleon/provisioning.xml\n" >> checksums.txt
                 md5=`md5sum checksums.txt`
                 mv checksums.txt $WORKSPACE_SRC_PATH/wildfly-glow
                 echo -n "wildfly-glow" > $(results.contentLocation.path)
                 gitId=$(params.gitUrl)/revision/$(params.gitRevision)
                 newBranch=`tr -s :@#/ _ <<< "$gitId"`
                 echo -n "$newBranch" > $(results.gitRevision.path)
+                gitURI=$(params.gitUrl)
+                appName=${gitURI##*/}
+                echo -n "$appName" > $(results.appName.path)
+                sed -i "s|WILDFLY_GLOW_GIT_URI|"https://github.com/jfdenise/go-to-openshift"|" "$WORKSPACE_SRC_PATH/wildfly-glow/helm.yaml" 
+                sed -i "s|WILDFLY_GLOW_GIT_REF|"$newBranch"|" "$WORKSPACE_SRC_PATH/wildfly-glow/helm.yaml" 
                 ls -l $WORKSPACE_SRC_PATH/wildfly-glow
             else
                 echo "Error while scanning the deployment!"

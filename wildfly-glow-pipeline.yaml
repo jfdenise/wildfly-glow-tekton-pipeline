@@ -94,3 +94,17 @@ spec:
       runAfter: 
         - git-clone-internal-repo
         - wildfly-glow-build
+    - name: helm-install
+      taskRef:
+        name: wildfly-helm-task
+      params:
+        - name: helmFile
+          value: $(tasks.wildfly-glow-build.results.contentLocation)/helm.yaml
+        - name: releaseName
+          value: $(tasks.wildfly-glow-build.results.appName)
+      workspaces:
+        - name: sources
+          workspace: shared-data
+      runAfter: 
+        - git-create-branch-and-push
+

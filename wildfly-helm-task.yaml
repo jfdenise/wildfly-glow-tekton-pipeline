@@ -1,0 +1,25 @@
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: wildfly-helm-task
+spec:
+  params:
+   - name: helmFile
+     type: string
+   - name: releaseName
+     type: string
+  workspaces:
+    - name: sources
+      description: The src dir
+  steps:
+    - name: helm-install
+      securityContext:
+        runAsUser: 0
+      image: "docker.io/lachlanevenson/k8s-helm@sha256:5c792f29950b388de24e7448d378881f68b3df73a7b30769a6aa861061fd08ae"
+      env:
+        - name: WORKSPACE_SRC_PATH
+          value: $(workspaces.sources.path)
+      script: |
+        helm repo add wildfly https://docs.wildfly.org/wildfly-charts/
+        echo installing helm chart...
+        helm install $(params.releaseName) -f "$WORKSPACE_SRC_PATH/$(params.helmFile)" wildfly/wildfly
