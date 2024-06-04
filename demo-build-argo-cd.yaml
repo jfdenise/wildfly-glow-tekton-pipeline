@@ -1,0 +1,37 @@
+apiVersion: tekton.dev/v1
+kind: PipelineRun
+metadata:
+  generateName: demo-build-
+spec:
+  workspaces:
+  - name: app-repo
+    subPath: app-repo
+    persistentVolumeClaim:
+      claimName: glow-pipeline-data
+  - name: shared-data
+    subPath: sources
+    persistentVolumeClaim:
+      claimName: glow-pipeline-data
+  - name: internal-repo
+    subPath: internal-repo
+    persistentVolumeClaim:
+      claimName: glow-pipeline-data
+  - name: ssh-creds
+    secret:
+        secretName: my-ssh-credentials
+  - name: dockerconfig
+    secret:
+        secretName: dockerconfig-secret
+  pipelineRef:
+    name: wildfly-glow-pipeline
+  params:
+    - name: gitRepo
+      value: "github.com"
+    - name: gitRepoOwner
+      value: "jfdenise"
+    - name: gitRepoProject
+      value: "my-war"
+    - name: gitRevision
+      value: "main"
+    - name: project
+      value: "openshift-gitops"

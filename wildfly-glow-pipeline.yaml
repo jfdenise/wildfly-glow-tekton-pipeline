@@ -1,0 +1,315 @@
+apiVersion: tekton.dev/v1
+kind: Pipeline
+metadata:
+  name: wildfly-glow-pipeline
+spec:
+  params:
+    - name: gitRepo
+    - name: gitRepoOwner
+    - name: gitRepoProject
+    - name: gitRevision
+      default: ""
+    - name: project
+      default: ""
+  workspaces:
+    - name: shared-data
+    - name: ssh-creds
+    - name: internal-repo
+    - name: dockerconfig
+    - name: app-repo
+  tasks:
+    - name: setup
+      taskRef:
+        name: wildfly-setup-task
+      workspaces:
+        - name: sources
+          workspace: shared-data
+        - name: internal-repo
+          workspace: internal-repo
+        - name: app-repo
+          workspace: app-repo
+    # This one is only needed in the POC
+    # In real service, the new branch would be setup and passed as parameters to the pipeline
+    - name: identify-internal-branch
+      params:
+        - name: gitRepo
+          value: $(params.gitRepo)
+        - name: gitRepoOwner
+          value: $(params.gitRepoOwner)
+        - name: gitRepoProject
+          value: "$(params.gitRepoProject)"
+        - name: gitRevision
+          value: "$(params.gitRevision)"
+      taskRef:
+        name: wildfly-identify-branch-task
+      runAfter: 
+        - setup
+    - name: git-clone-app-repo
+      taskRef:
+        name: git-clone
+        kind: ClusterTask
+      workspaces:
+        - name: output
+          workspace: app-repo
+        - name: ssh-directory
+          workspace: ssh-creds
+      params:
+        - name: url
+          value: "git@$(params.gitRepo):$(params.gitRepoOwner)/$(params.gitRepoProject)"
+        - name: revision
+          value: "$(params.gitRevision)"
+        - name: subdirectory
+          value: "$(tasks.setup.results.contextDir)"
+      runAfter: 
+        - setup
+    - name: git-clone-internal-repo
+      taskRef:
+        name: git-clone
+        kind: ClusterTask
+      workspaces:
+        - name: output
+          workspace: internal-repo
+        - name: ssh-directory
+          workspace: ssh-creds
+      params:
+        - name: url
+          value: "git@github.com:jfdenise/go-to-openshift"
+        - name: revision
+          value: "$(tasks.identify-internal-branch.results.branchToPull)"
+        - name: subdirectory
+          value: "$(tasks.setup.results.contextDir)"
+      runAfter: 
+        - identify-internal-branch
+    - name: wildfly-glow-generate
+      taskRef:
+        name: wildfly-glow-generator-task
+      params:
+        - name: gitRepo
+          value: "$(params.gitRepo)/$(params.gitRepoOwner)/$(params.gitRepoProject)"
+        - name: gitRevision
+          value: "$(params.gitRevision)"
+        - name: gitCommit
+          value: "$(tasks.git-clone-app-repo.results.commit)"
+        - name: gitCommitterDate
+          value: "$(tasks.git-clone-app-repo.results.committer-date)"
+        - name: contextDir
+          value: "$(tasks.setup.results.contextDir)"
+        - name: newBranch
+          value: "$(tasks.identify-internal-branch.results.newBranch)"
+      workspaces:
+        - name: sources
+          workspace: shared-data
+        - name: current-repo
+          workspace: internal-repo
+        - name: app-repo
+          workspace: app-repo
+      runAfter: 
+        - git-clone-app-repo
+        - git-clone-internal-repo
+    - name: check-server-image-exists
+      taskRef:
+        name: wildfly-check-image-exists-task
+     # If we enable this condition, and we don't need to build a server image, all following tasks are not executed. Bug in Tekton?'
+     # when:
+     # - input: "$(tasks.wildfly-glow-generate.results.needBuildServerImage)"
+     #   operator: in
+     #   values: ["true"]
+      params:
+        - name: image
+          value: "$(tasks.wildfly-glow-generate.results.serverImage)"
+      runAfter: 
+        - wildfly-glow-generate
+    - name: wildfly-provision
+      taskRef:
+        name: wildfly-provision-task
+      when:
+      - input: "$(tasks.check-server-image-exists.results.exists)"
+        operator: in
+        values: ["false"]
+      params:
+        - name: contextDir
+          value: "$(tasks.setup.results.contextDir)"
+      workspaces:
+        - name: sources
+          workspace: shared-data
+        - name: app-repo
+          workspace: app-repo
+      runAfter: 
+        - check-server-image-exists
+    - name: build-server-image
+      taskRef:
+        name: buildah
+        kind: ClusterTask
+      when:
+      - input: "$(tasks.check-server-image-exists.results.exists)"
+        operator: in
+        values: ["false"]
+      params:
+        - name: IMAGE
+          value: "$(tasks.wildfly-glow-generate.results.serverImage)"
+        - name: DOCKERFILE
+          value: "$(tasks.wildfly-glow-generate.results.serverDockerfile)"
+        - name: CONTEXT
+          value: "$(tasks.setup.results.contextDir)/$(tasks.wildfly-glow-generate.results.dockerContext)"
+        - name: TLSVERIFY
+          value: "false"
+      runAfter: 
+        - wildfly-provision
+      workspaces:
+        - name: source
+          workspace: shared-data
+        - name: dockerconfig
+          workspace: dockerconfig
+    - name: check-app-image-exists
+      taskRef:
+        name: wildfly-check-image-exists-task
+      when:
+      - input: "$(tasks.wildfly-glow-generate.results.needBuildAppImage)"
+        operator: in
+        values: ["true"]
+      params:
+        - name: image
+          value: "$(tasks.wildfly-glow-generate.results.appImage)"
+      runAfter: 
+        - build-server-image
+    - name: build-app-image
+      taskRef:
+        name: buildah
+        kind: ClusterTask
+      when:
+      - input: "$(tasks.wildfly-glow-generate.results.needBuildAppImage)"
+        operator: in
+        values: ["true"]
+      params:
+        - name: IMAGE
+          value: "$(tasks.wildfly-glow-generate.results.appImage)"
+        - name: DOCKERFILE
+          value: "$(tasks.wildfly-glow-generate.results.appDockerfile)"
+        - name: CONTEXT
+          value: "$(tasks.setup.results.contextDir)/$(tasks.wildfly-glow-generate.results.dockerContext)"
+        - name: TLSVERIFY
+          value: "false"
+      runAfter: 
+        - check-app-image-exists
+      workspaces:
+        - name: source
+          workspace: shared-data
+        - name: dockerconfig
+          workspace: dockerconfig
+    - name: git-update-internal-repo-and-push
+      taskRef:
+        name: git-cli
+        kind: ClusterTask
+      params:
+        - name: GIT_USER_NAME
+          value: jfdenise
+        - name: GIT_USER_EMAIL
+          value: jfdenise@gmail.com
+        - name: GIT_SCRIPT
+          value: |
+           cd $(tasks.setup.results.contextDir) 
+           git config --global --add safe.directory /workspace/source/$(tasks.setup.results.contextDir)
+           rev=$(tasks.identify-internal-branch.results.newBranch)
+           exists=`git ls-remote --heads git@github.com:jfdenise/go-to-openshift "refs/heads/${rev}" | wc -l`
+           if [ "${exists}" = "1" ]; then
+             echo "A branch already exists"
+             git fetch origin "$(tasks.identify-internal-branch.results.newBranch)"
+             git checkout "$(tasks.identify-internal-branch.results.newBranch)"
+           else
+             git checkout -b "$(tasks.identify-internal-branch.results.newBranch)"
+           fi
+           ls -al $(workspaces.input.path)/$(tasks.setup.results.contextDir)/$(tasks.wildfly-glow-generate.results.contentLocation)/
+           cp -r $(workspaces.input.path)/$(tasks.setup.results.contextDir)/$(tasks.wildfly-glow-generate.results.contentLocation)/* .
+           ls -al .
+           git status
+           if [ -n "$(git status --porcelain)" ]; then
+             git add *
+             git commit -m "Commit from WildFly Glow pipeline"
+             git push origin "$(tasks.identify-internal-branch.results.newBranch)"
+           fi
+      when:
+      - input: "$(tasks.wildfly-glow-generate.results.needBuildAppImage)"
+        operator: in
+        values: ["true"]
+      workspaces:
+        - name: source
+          workspace: internal-repo
+        - name: input
+          workspace: shared-data
+        - name: ssh-directory
+          workspace: ssh-creds
+      runAfter: 
+        -  build-app-image
+    - name: git-update-deployment-repo-and-push
+      taskRef:
+        name: git-cli
+        kind: ClusterTask
+      params:
+        - name: GIT_USER_NAME
+          value: jfdenise
+        - name: GIT_USER_EMAIL
+          value: jfdenise@gmail.com
+        - name: GIT_SCRIPT
+          value: |
+           cd $(tasks.setup.results.contextDir) 
+           git config --global --add safe.directory /workspace/source/$(tasks.setup.results.contextDir)
+           rev=$(params.gitRevision)_deployment
+           exists=`git ls-remote --heads git@$(params.gitRepo):$(params.gitRepoOwner)/$(params.gitRepoProject) "refs/heads/${rev}" | wc -l`
+           if [ "${exists}" = "1" ]; then
+             echo "A branch already exists"
+             git fetch origin "$rev"
+             git checkout "$rev"
+           else
+             # Reset content
+             rm -rf ./*
+             git add *
+             git commit -m "Commit from WildFly Glow pipeline, reset branch content"
+             git checkout -b "$rev"
+           fi
+           if [ -d "$(workspaces.input.path)/$(tasks.setup.results.contextDir)/$(tasks.wildfly-glow-generate.results.deploymentLocation)" ]; then
+             cp -r $(workspaces.input.path)/$(tasks.setup.results.contextDir)/$(tasks.wildfly-glow-generate.results.deploymentLocation)/* .
+             ls -al .
+             git status
+             if [ -n "$(git status --porcelain)" ]; then
+               git add *
+               git commit -m "Commit from WildFly Glow pipeline, deployment resources"
+               git push origin "$rev"
+             fi
+           fi
+      workspaces:
+        - name: source
+          workspace: app-repo
+        - name: input
+          workspace: shared-data
+        - name: ssh-directory
+          workspace: ssh-creds
+      runAfter: 
+        - build-app-image
+    - name: deploy
+      taskRef:
+        name: wildfly-deploy-task
+      workspaces:
+        - name: app-repo
+          workspace: app-repo
+      params:
+        - name: contextDir
+          value: "$(tasks.setup.results.contextDir)"
+        - name: project
+          value: "$(params.project)"
+      runAfter: 
+        - git-update-deployment-repo-and-push
+  finally:
+    - name: cleanup
+      taskRef:
+        name: wildfly-cleanup-task
+      params:
+        - name: contextDir
+          value: "$(tasks.setup.results.contextDir)"
+      workspaces:
+        - name: sources
+          workspace: shared-data
+        - name: internal-repo
+          workspace: internal-repo
+        - name: app-repo
+          workspace: app-repo
+
