@@ -1,7 +1,7 @@
 apiVersion: tekton.dev/v1
 kind: PipelineRun
 metadata:
-  generateName: demo-deploy-
+  generateName: demo-db-deploy-
 spec:
   workspaces:
   - name: shared-data
@@ -14,4 +14,4 @@ spec:
     - name: gitUrl
       value: "https://github.com/jfdenise/go-to-openshift"
     - name: gitRevision
-      value: "http_github.com_jfdenise_my-war_revision_main"
+      value: "http_github.com_jfdenise_my-db-app_revision_main"

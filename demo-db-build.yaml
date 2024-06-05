@@ -1,7 +1,7 @@
 apiVersion: tekton.dev/v1
 kind: PipelineRun
 metadata:
-  generateName: demo-build-
+  generateName: demo-db-build-
 spec:
   workspaces:
   - name: shared-data
@@ -19,6 +19,6 @@ spec:
     name: wildfly-glow-pipeline
   params:
     - name: gitUrl
-      value: "http://github.com/jfdenise/my-war"
+      value: "http://github.com/jfdenise/my-db-app"
     - name: gitRevision
       value: "main"

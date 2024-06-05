@@ -76,9 +76,15 @@ spec:
            else
              git checkout -b "$(tasks.wildfly-glow-generate.results.gitRevision)"
            fi
+           ls -al $(workspaces.input.path)/$(tasks.wildfly-glow-generate.results.contentLocation)/
            cp -r $(workspaces.input.path)/$(tasks.wildfly-glow-generate.results.contentLocation)/* .
+           if [ -d  "$(workspaces.input.path)/$(tasks.wildfly-glow-generate.results.contentLocation)/.s2i" ]; then
+             cp -rf $(workspaces.input.path)/$(tasks.wildfly-glow-generate.results.contentLocation)/.s2i .
+           fi
+           ls -al .
            if [ -n "$(git status --porcelain)" ]; then
              git add *
+             git add */.*
              git commit -m "Commit from WildFly Glow pipeline"
              git push origin "$(tasks.wildfly-glow-generate.results.gitRevision)"
            else

@@ -48,9 +48,14 @@ spec:
         deployment=""
         rm -rf $WORKSPACE_SRC_PATH/wildfly-glow
         mkdir -p $WORKSPACE_SRC_PATH/wildfly-glow
+        ls -l $srcDir
         for eachfile in $files
         do
+          if [[ $eachfile =~ .*.war ]] || [[ $eachfile =~ .*.jar ]] || [[ $eachfile =~ .*.ear ]]; then
             deployment="$deployment $eachfile"
+          else
+            cp $eachfile $WORKSPACE_SRC_PATH/wildfly-glow
+          fi
         done
         if [ -n "${deployment}" ]; then
             gitURI=$(params.gitUrl)
@@ -58,15 +63,31 @@ spec:
             newBranch=`tr -s :@#/ _ <<< "$gitId"`
             appName=${gitURI##*/}
             echo "Retrieving WildFly Glow"            
-            curl --insecure https://repository.jboss.org/nexus/content/repositories/snapshots/org/wildfly/glow/wildfly-glow/1.0.7.Final-SNAPSHOT/wildfly-glow-1.0.7.Final-20240605.085027-4.zip -LO
+            curl --insecure https://repository.jboss.org/nexus/content/repositories/snapshots/org/wildfly/glow/wildfly-glow/1.0.7.Final-SNAPSHOT/wildfly-glow-1.0.7.Final-20240605.130948-7.zip -LO
             unzip wildfly-glow*.zip -d .
             glowDir=`find $PWD -type d -iname "wildfly-glow*"`
-            $glowDir/wildfly-glow scan $deployment --cloud --provision openshift_resources --output-dir scan_result --properties="-Dorg.wildfly.glow.openshift.git.uri="https://github.com/jfdenise/go-to-openshift" -Dorg.wildfly.glow.openshift.git.ref=$newBranch -Dorg.wildfly.glow.openshift.app.name=$appName"
+            configFile=
+            if [ -f "$srcDir/glow.config" ]; then
+              configFile="--cli-config-file=$srcDir/glow.config"
+            fi
+            cliScript=
+            if [ -f "$srcDir/script.cli" ]; then
+              cliScript="--cli-script=$srcDir/script.cli"
+            fi
+            bashScript=
+            if [ -f "$srcDir/init.sh" ]; then
+              bashScript="--init-script=$srcDir/init.sh"
+            fi
+            $glowDir/wildfly-glow scan $deployment --cloud --provision openshift_resources --output-dir scan_result --properties="-Dorg.wildfly.glow.openshift.git.uri=https://github.com/jfdenise/go-to-openshift -Dorg.wildfly.glow.openshift.git.ref=$newBranch -Dorg.wildfly.glow.openshift.app.name=$appName" $configFile $cliScript $bashScript
             rm -rf $glowDir
             if [ $? == 0 ]; then
                 echo "Good to go to OpenShift!"
                 
                 mv scan_result/* $WORKSPACE_SRC_PATH/wildfly-glow
+                # We can have s2i hidden files
+                if [ -d  scan_result/.s2i ]; then
+                  cp -rf scan_result/.s2i $WORKSPACE_SRC_PATH/wildfly-glow/.s2i
+                fi
                 # Branch from the url+revision
                 md5sum $srcDir/* > checksums.txt
                 md5Git=(`echo -n "$(params.gitUrl)#$(params.gitRevision)" | md5sum`)
@@ -89,7 +110,7 @@ spec:
                 echo -n "$appName-build-artifacts-build" > $(results.builderName.path)
                 echo -n "$appName-build" > $(results.runtimeName.path)
 
-                ls -l $WORKSPACE_SRC_PATH/wildfly-glow
+                ls -al $WORKSPACE_SRC_PATH/wildfly-glow
             else
                 echo "Error while scanning the deployment!"
                 cat tmp/output.txt
