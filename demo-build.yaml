@@ -1,7 +1,7 @@
 apiVersion: tekton.dev/v1
 kind: PipelineRun
 metadata:
-  generateName: demo-run
+  generateName: demo-build
 spec:
   workspaces:
   - name: shared-data

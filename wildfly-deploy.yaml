@@ -1,0 +1,25 @@
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: wildfly-deploy-task
+spec:
+  workspaces:
+    - name: sources
+      description: The src dir
+  steps:
+    - name: deploy
+      securityContext:
+        runAsUser: 0
+      image: "image-registry.openshift-image-registry.svc:5000/openshift/cli:latest"
+      env:
+        - name: WORKSPACE_SRC_PATH
+          value: $(workspaces.sources.path)
+      script: |
+        files=`ls $WORKSPACE_SRC_PATH/resources/*.yaml`
+        for eachfile in $files
+        do
+          if [[ ! $eachfile =~ .*-build-config.yaml ]] && [[ ! $eachfile =~ .*-image-stream.yaml ]]; then
+            oc apply -f "$eachfile"
+          fi
+        done
+        echo "Application has been deployed"

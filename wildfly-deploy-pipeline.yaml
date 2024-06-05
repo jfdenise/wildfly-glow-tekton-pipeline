@@ -1,0 +1,33 @@
+apiVersion: tekton.dev/v1
+kind: Pipeline
+metadata:
+  name: wildfly-deploy-pipeline
+spec:
+  params:
+    - name: gitUrl
+    - name: gitRevision
+      default: ""
+  workspaces:
+    - name: shared-data
+  tasks:
+    - name: git-clone-internal-repo
+      taskRef:
+        name: git-clone
+        kind: ClusterTask
+      workspaces:
+        - name: output
+          workspace: shared-data
+      params:
+        - name: url
+          value: "$(params.gitUrl)"
+        - name: revision
+          value: "$(params.gitRevision)"
+    - name: deploy
+      taskRef:
+        name: wildfly-deploy-task
+      workspaces:
+        - name: sources
+          workspace: shared-data
+      runAfter: 
+        - git-clone-internal-repo
+
