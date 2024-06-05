@@ -1,7 +1,7 @@
 apiVersion: tekton.dev/v1
 kind: Task
 metadata:
-  name: wildfly-glow-builder-task
+  name: wildfly-glow-generator-task
 spec:
   params:
    - name: gitUrl
@@ -16,6 +16,18 @@ spec:
       description: Where the generated content has been put
     - name: appName
       description: The name of the application
+    - name: builderImageBuildFile
+      description: The resource to build the builder Image
+    - name: runtimeImageBuildFile
+      description: The resource to build the runtime Image
+    - name: builderImageStreamFile
+      description: The builder Image Stream resource file
+    - name: runtimeImageStreamFile
+      description: The runtime Image Stream resource file
+    - name: builderName
+      description: The name to build the builder Image
+    - name: runtimeName
+      description: The name to build the runtime Image
   workspaces:
     - name: sources
       description: The src dir
@@ -41,15 +53,19 @@ spec:
             deployment="$deployment $eachfile"
         done
         if [ -n "${deployment}" ]; then
+            gitURI=$(params.gitUrl)
+            gitId=$(params.gitUrl)/revision/$(params.gitRevision)
+            newBranch=`tr -s :@#/ _ <<< "$gitId"`
+            appName=${gitURI##*/}
             echo "Retrieving WildFly Glow"            
-            curl --insecure https://repository.jboss.org/nexus/content/repositories/snapshots/org/wildfly/glow/wildfly-glow/1.0.7.Final-SNAPSHOT/wildfly-glow-1.0.7.Final-20240604.172644-1.zip -LO
+            curl --insecure https://repository.jboss.org/nexus/content/repositories/snapshots/org/wildfly/glow/wildfly-glow/1.0.7.Final-SNAPSHOT/wildfly-glow-1.0.7.Final-20240605.085027-4.zip -LO
             unzip wildfly-glow*.zip -d .
             glowDir=`find $PWD -type d -iname "wildfly-glow*"`
-            $glowDir/wildfly-glow scan $deployment --cloud --provision openshift_resources --output-dir scan_result
+            $glowDir/wildfly-glow scan $deployment --cloud --provision openshift_resources --output-dir scan_result --properties="-Dorg.wildfly.glow.openshift.git.uri="https://github.com/jfdenise/go-to-openshift" -Dorg.wildfly.glow.openshift.git.ref=$newBranch -Dorg.wildfly.glow.openshift.app.name=$appName"
             rm -rf $glowDir
             if [ $? == 0 ]; then
                 echo "Good to go to OpenShift!"
-
+                
                 mv scan_result/* $WORKSPACE_SRC_PATH/wildfly-glow
                 # Branch from the url+revision
                 md5sum $srcDir/* > checksums.txt
@@ -59,15 +75,20 @@ spec:
                 echo "$md5Prov galleon/provisioning.xml\n" >> checksums.txt
                 md5=`md5sum checksums.txt`
                 mv checksums.txt $WORKSPACE_SRC_PATH/wildfly-glow
+                
+                
                 echo -n "wildfly-glow" > $(results.contentLocation.path)
-                gitId=$(params.gitUrl)/revision/$(params.gitRevision)
-                newBranch=`tr -s :@#/ _ <<< "$gitId"`
                 echo -n "$newBranch" > $(results.gitRevision.path)
-                gitURI=$(params.gitUrl)
-                appName=${gitURI##*/}
-                echo -n "$appName" > $(results.appName.path)
-                sed -i "s|WILDFLY_GLOW_GIT_URI|"https://github.com/jfdenise/go-to-openshift"|" "$WORKSPACE_SRC_PATH/wildfly-glow/helm.yaml" 
-                sed -i "s|WILDFLY_GLOW_GIT_REF|"$newBranch"|" "$WORKSPACE_SRC_PATH/wildfly-glow/helm.yaml" 
+                
+                echo -n "$appName-build-artifacts-image-stream.yaml" > $(results.builderImageStreamFile.path)
+                echo -n "$appName-image-stream.yaml" > $(results.runtimeImageStreamFile.path)
+                
+                echo -n "$appName-build-artifacts-build-config.yaml" > $(results.builderImageBuildFile.path)
+                echo -n "$appName-build-config.yaml" > $(results.runtimeImageBuildFile.path)
+                
+                echo -n "$appName-build-artifacts-build" > $(results.builderName.path)
+                echo -n "$appName-build" > $(results.runtimeName.path)
+
                 ls -l $WORKSPACE_SRC_PATH/wildfly-glow
             else
                 echo "Error while scanning the deployment!"

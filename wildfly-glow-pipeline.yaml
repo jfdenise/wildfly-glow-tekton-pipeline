@@ -26,9 +26,9 @@ spec:
           value: "$(params.gitRevision)"
         - name: subdirectory
           value: cloned-repo
-    - name: wildfly-glow-build
+    - name: wildfly-glow-generate
       taskRef:
-        name: wildfly-glow-builder-task
+        name: wildfly-glow-generator-task
       params:
         - name: gitUrl
           value: "$(params.gitUrl)"
@@ -67,20 +67,20 @@ spec:
         - name: GIT_SCRIPT
           value: |
            git config --global --add safe.directory /workspace/source
-           rev=$(tasks.wildfly-glow-build.results.gitRevision)
+           rev=$(tasks.wildfly-glow-generate.results.gitRevision)
            exists=`git ls-remote --heads git@github.com:jfdenise/go-to-openshift "refs/heads/${rev}" | wc -l`
            if [ "${exists}" = "1" ]; then
              echo "A branch already exists"
-             git fetch origin "$(tasks.wildfly-glow-build.results.gitRevision)"
-             git checkout "$(tasks.wildfly-glow-build.results.gitRevision)"
+             git fetch origin "$(tasks.wildfly-glow-generate.results.gitRevision)"
+             git checkout "$(tasks.wildfly-glow-generate.results.gitRevision)"
            else
-             git checkout -b "$(tasks.wildfly-glow-build.results.gitRevision)"
+             git checkout -b "$(tasks.wildfly-glow-generate.results.gitRevision)"
            fi
-           cp -r $(workspaces.input.path)/$(tasks.wildfly-glow-build.results.contentLocation)/* .
+           cp -r $(workspaces.input.path)/$(tasks.wildfly-glow-generate.results.contentLocation)/* .
            if [ -n "$(git status --porcelain)" ]; then
              git add *
              git commit -m "Commit from WildFly Glow pipeline"
-             git push origin "$(tasks.wildfly-glow-build.results.gitRevision)"
+             git push origin "$(tasks.wildfly-glow-generate.results.gitRevision)"
            else
              echo "No changes to commit";
            fi
@@ -93,29 +93,23 @@ spec:
           workspace: ssh-creds
       runAfter: 
         - git-clone-internal-repo
-        - wildfly-glow-build
-#    - name: check-helm-release
-#      taskRef:
-#        name: openshift-client
-#        kind: ClusterTask
-#      runAfter:
-#        - git-create-branch-and-push
-#      params:
-#      - name: SCRIPT
-#        value: |
-#          oc set image-lookup $(params.imageName)
-    - name: helm-install
-#      when:
-#      - input: "$(tasks.check-helm-release.results.needInstall)"
-#        operator: in
-#        values: ["true"]
+        - wildfly-glow-generate
+    - name: build-image
       taskRef:
-        name: wildfly-helm-task
+        name: wildfly-build-image-task
       params:
-        - name: helmFile
-          value: $(tasks.wildfly-glow-build.results.contentLocation)/helm.yaml
-        - name: releaseName
-          value: $(tasks.wildfly-glow-build.results.appName)
+        - name: runtimeName
+          value: $(tasks.wildfly-glow-generate.results.runtimeName)
+        - name: builderName
+          value: $(tasks.wildfly-glow-generate.results.builderName)
+        - name: runtimeImageBuildFile
+          value: $(tasks.wildfly-glow-generate.results.runtimeImageBuildFile)
+        - name: builderImageBuildFile
+          value: $(tasks.wildfly-glow-generate.results.builderImageBuildFile)
+        - name: runtimeImageStreamFile
+          value: $(tasks.wildfly-glow-generate.results.runtimeImageStreamFile)
+        - name: builderImageStreamFile
+          value: $(tasks.wildfly-glow-generate.results.builderImageStreamFile)
       workspaces:
         - name: sources
           workspace: shared-data
