@@ -91,12 +91,18 @@ spec:
            else
              git checkout -b "$(tasks.wildfly-glow-generate.results.gitRevision)"
            fi
+           # Remove all
+           rm -rf ./*
+           if [ -d  ".s2i" ]; then
+             rm -rf .s2i
+           fi
            ls -al $(workspaces.input.path)/$(tasks.setup.results.contextDir)/$(tasks.wildfly-glow-generate.results.contentLocation)/
            cp -r $(workspaces.input.path)/$(tasks.setup.results.contextDir)/$(tasks.wildfly-glow-generate.results.contentLocation)/* .
            if [ -d  "$(workspaces.input.path)/$(tasks.setup.results.contextDir)/$(tasks.wildfly-glow-generate.results.contentLocation)/.s2i" ]; then
              cp -rf $(workspaces.input.path)/$(tasks.setup.results.contextDir)/$(tasks.wildfly-glow-generate.results.contentLocation)/.s2i .
            fi
            ls -al .
+           git status
            if [ -n "$(git status --porcelain)" ]; then
              git add *
              git add */.*
