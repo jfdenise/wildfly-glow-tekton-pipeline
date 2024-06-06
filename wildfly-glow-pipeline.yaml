@@ -12,6 +12,14 @@ spec:
     - name: ssh-creds
     - name: internal-repo
   tasks:
+    - name: setup
+      taskRef:
+        name: wildfly-setup-task
+      workspaces:
+        - name: sources
+          workspace: shared-data
+        - name: internal-repo
+          workspace: internal-repo
     - name: git-clone-user-repo
       taskRef:
         name: git-clone
@@ -25,7 +33,9 @@ spec:
         - name: revision
           value: "$(params.gitRevision)"
         - name: subdirectory
-          value: cloned-repo
+          value: "$(tasks.setup.results.contextDir)"
+      runAfter: 
+        - setup
     - name: wildfly-glow-generate
       taskRef:
         name: wildfly-glow-generator-task
@@ -34,6 +44,8 @@ spec:
           value: "$(params.gitUrl)"
         - name: gitRevision
           value: "$(params.gitRevision)"
+        - name: sourcesDir
+          value: "$(tasks.setup.results.contextDir)"
       workspaces:
         - name: sources
           workspace: shared-data
@@ -53,8 +65,10 @@ spec:
           value: "git@github.com:jfdenise/go-to-openshift"
         - name: revision
           value: "main"
-        - name: userHome
-          value: "/home/git"
+        - name: subdirectory
+          value: "$(tasks.setup.results.contextDir)"
+      runAfter: 
+        - setup
     - name: git-create-branch-and-push
       taskRef:
         name: git-cli
@@ -66,7 +80,8 @@ spec:
           value: jfdenise@gmail.com
         - name: GIT_SCRIPT
           value: |
-           git config --global --add safe.directory /workspace/source
+           cd $(tasks.setup.results.contextDir) 
+           git config --global --add safe.directory /workspace/source/$(tasks.setup.results.contextDir)
            rev=$(tasks.wildfly-glow-generate.results.gitRevision)
            exists=`git ls-remote --heads git@github.com:jfdenise/go-to-openshift "refs/heads/${rev}" | wc -l`
            if [ "${exists}" = "1" ]; then
@@ -76,10 +91,10 @@ spec:
            else
              git checkout -b "$(tasks.wildfly-glow-generate.results.gitRevision)"
            fi
-           ls -al $(workspaces.input.path)/$(tasks.wildfly-glow-generate.results.contentLocation)/
-           cp -r $(workspaces.input.path)/$(tasks.wildfly-glow-generate.results.contentLocation)/* .
-           if [ -d  "$(workspaces.input.path)/$(tasks.wildfly-glow-generate.results.contentLocation)/.s2i" ]; then
-             cp -rf $(workspaces.input.path)/$(tasks.wildfly-glow-generate.results.contentLocation)/.s2i .
+           ls -al $(workspaces.input.path)/$(tasks.setup.results.contextDir)/$(tasks.wildfly-glow-generate.results.contentLocation)/
+           cp -r $(workspaces.input.path)/$(tasks.setup.results.contextDir)/$(tasks.wildfly-glow-generate.results.contentLocation)/* .
+           if [ -d  "$(workspaces.input.path)/$(tasks.setup.results.contextDir)/$(tasks.wildfly-glow-generate.results.contentLocation)/.s2i" ]; then
+             cp -rf $(workspaces.input.path)/$(tasks.setup.results.contextDir)/$(tasks.wildfly-glow-generate.results.contentLocation)/.s2i .
            fi
            ls -al .
            if [ -n "$(git status --porcelain)" ]; then
@@ -104,21 +119,23 @@ spec:
       taskRef:
         name: wildfly-build-image-task
       params:
-        - name: runtimeName
-          value: $(tasks.wildfly-glow-generate.results.runtimeName)
-        - name: builderName
-          value: $(tasks.wildfly-glow-generate.results.builderName)
-        - name: runtimeImageBuildFile
-          value: $(tasks.wildfly-glow-generate.results.runtimeImageBuildFile)
-        - name: builderImageBuildFile
-          value: $(tasks.wildfly-glow-generate.results.builderImageBuildFile)
-        - name: runtimeImageStreamFile
-          value: $(tasks.wildfly-glow-generate.results.runtimeImageStreamFile)
-        - name: builderImageStreamFile
-          value: $(tasks.wildfly-glow-generate.results.builderImageStreamFile)
+        - name: contentLocation
+          value: "$(tasks.setup.results.contextDir)/$(tasks.wildfly-glow-generate.results.contentLocation)"
       workspaces:
         - name: sources
           workspace: shared-data
       runAfter: 
         - git-create-branch-and-push
+  finally:
+    - name: cleanup
+      taskRef:
+        name: wildfly-cleanup-task
+      params:
+        - name: contextDir
+          value: "$(tasks.setup.results.contextDir)"
+      workspaces:
+        - name: sources
+          workspace: shared-data
+        - name: internal-repo
+          workspace: internal-repo
 

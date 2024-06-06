@@ -3,6 +3,9 @@ kind: Task
 metadata:
   name: wildfly-deploy-task
 spec:
+  params:
+    - name: contentLocation
+      description: Where to find resources
   workspaces:
     - name: sources
       description: The src dir
@@ -12,14 +15,20 @@ spec:
         runAsUser: 0
       image: "image-registry.openshift-image-registry.svc:5000/openshift/cli:latest"
       env:
-        - name: WORKSPACE_SRC_PATH
-          value: $(workspaces.sources.path)
+        - name: RESOURCES_PATH
+          value: $(workspaces.sources.path)/$(params.contentLocation)/resources
       script: |
-        files=`ls $WORKSPACE_SRC_PATH/resources/*.yaml`
+        deployersDir=$RESOURCES_PATH/deployers/
+        if [ -d "$deployersDir" ]; then
+          files=`ls $deployersDir/*.yaml`
+          for eachfile in $files
+          do
+            oc apply -f "$eachfile"
+          done
+        fi
+        files=`ls $RESOURCES_PATH/deployment/*.yaml`
         for eachfile in $files
         do
-          if [[ ! $eachfile =~ .*-build-config.yaml ]] && [[ ! $eachfile =~ .*-image-stream.yaml ]]; then
-            oc apply -f "$eachfile"
-          fi
+          oc apply -f "$eachfile"
         done
         echo "Application has been deployed"

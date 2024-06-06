@@ -9,25 +9,13 @@ spec:
    - name: gitRevision
      type: string
      default: ""
+   - name: sourcesDir
+     type: string
   results:
     - name: gitRevision
       description: The branch to create
     - name: contentLocation
       description: Where the generated content has been put
-    - name: appName
-      description: The name of the application
-    - name: builderImageBuildFile
-      description: The resource to build the builder Image
-    - name: runtimeImageBuildFile
-      description: The resource to build the runtime Image
-    - name: builderImageStreamFile
-      description: The builder Image Stream resource file
-    - name: runtimeImageStreamFile
-      description: The runtime Image Stream resource file
-    - name: builderName
-      description: The name to build the builder Image
-    - name: runtimeName
-      description: The name to build the runtime Image
   workspaces:
     - name: sources
       description: The src dir
@@ -38,17 +26,15 @@ spec:
       image: "quay.io/wildfly/wildfly-runtime:latest"
       env:
         - name: WORKSPACE_SRC_PATH
-          value: $(workspaces.sources.path)
+          value: $(workspaces.sources.path)/$(params.sourcesDir)
       script: |
         #!/usr/bin/env bash
         set -eu
-        #war are located at the root of the src dir
-        srcDir="$WORKSPACE_SRC_PATH/cloned-repo"
+        srcDir="$WORKSPACE_SRC_PATH"
         files=`ls $srcDir/*.*`
         deployment=""
-        rm -rf $WORKSPACE_SRC_PATH/wildfly-glow
-        mkdir -p $WORKSPACE_SRC_PATH/wildfly-glow
         ls -l $srcDir
+        mkdir -p $WORKSPACE_SRC_PATH/wildfly-glow
         for eachfile in $files
         do
           if [[ $eachfile =~ .*.war ]] || [[ $eachfile =~ .*.jar ]] || [[ $eachfile =~ .*.ear ]]; then
@@ -63,7 +49,7 @@ spec:
             newBranch=`tr -s :@#/ _ <<< "$gitId"`
             appName=${gitURI##*/}
             echo "Retrieving WildFly Glow"            
-            curl --insecure https://repository.jboss.org/nexus/content/repositories/snapshots/org/wildfly/glow/wildfly-glow/1.0.7.Final-SNAPSHOT/wildfly-glow-1.0.7.Final-20240605.130948-7.zip -LO
+            curl --insecure https://repository.jboss.org/nexus/content/repositories/snapshots/org/wildfly/glow/wildfly-glow/1.0.7.Final-SNAPSHOT/wildfly-glow-1.0.7.Final-20240606.090716-8.zip -LO
             unzip wildfly-glow*.zip -d .
             glowDir=`find $PWD -type d -iname "wildfly-glow*"`
             configFile=
@@ -78,37 +64,13 @@ spec:
             if [ -f "$srcDir/init.sh" ]; then
               bashScript="--init-script=$srcDir/init.sh"
             fi
-            $glowDir/wildfly-glow scan $deployment --cloud --provision openshift_resources --output-dir scan_result --properties="-Dorg.wildfly.glow.openshift.git.uri=https://github.com/jfdenise/go-to-openshift -Dorg.wildfly.glow.openshift.git.ref=$newBranch -Dorg.wildfly.glow.openshift.app.name=$appName" $configFile $cliScript $bashScript
+            $glowDir/wildfly-glow scan $deployment --cloud --provision openshift_resources --output-dir "$WORKSPACE_SRC_PATH/wildfly-glow" --properties="-Dorg.wildfly.glow.openshift.git.uri=https://github.com/jfdenise/go-to-openshift -Dorg.wildfly.glow.openshift.git.ref=$newBranch -Dorg.wildfly.glow.openshift.app.name=$appName" $configFile $cliScript $bashScript
             rm -rf $glowDir
             if [ $? == 0 ]; then
                 echo "Good to go to OpenShift!"
-                
-                mv scan_result/* $WORKSPACE_SRC_PATH/wildfly-glow
-                # We can have s2i hidden files
-                if [ -d  scan_result/.s2i ]; then
-                  cp -rf scan_result/.s2i $WORKSPACE_SRC_PATH/wildfly-glow/.s2i
-                fi
-                # Branch from the url+revision
-                md5sum $srcDir/* > checksums.txt
-                md5Git=(`echo -n "$(params.gitUrl)#$(params.gitRevision)" | md5sum`)
-                echo "$md5Git $(params.gitUrl)#$(params.gitRevision)\n" >> checksums.txt
-                md5Prov=`md5sum "$WORKSPACE_SRC_PATH/wildfly-glow/galleon/provisioning.xml"`
-                echo "$md5Prov galleon/provisioning.xml\n" >> checksums.txt
-                md5=`md5sum checksums.txt`
-                mv checksums.txt $WORKSPACE_SRC_PATH/wildfly-glow
-                
-                
+
                 echo -n "wildfly-glow" > $(results.contentLocation.path)
                 echo -n "$newBranch" > $(results.gitRevision.path)
-                
-                echo -n "$appName-build-artifacts-image-stream.yaml" > $(results.builderImageStreamFile.path)
-                echo -n "$appName-image-stream.yaml" > $(results.runtimeImageStreamFile.path)
-                
-                echo -n "$appName-build-artifacts-build-config.yaml" > $(results.builderImageBuildFile.path)
-                echo -n "$appName-build-config.yaml" > $(results.runtimeImageBuildFile.path)
-                
-                echo -n "$appName-build-artifacts-build" > $(results.builderName.path)
-                echo -n "$appName-build" > $(results.runtimeName.path)
 
                 ls -al $WORKSPACE_SRC_PATH/wildfly-glow
             else

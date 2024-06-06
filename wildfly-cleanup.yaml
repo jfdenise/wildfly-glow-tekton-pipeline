@@ -1,0 +1,31 @@
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: wildfly-cleanup-task
+spec:
+  params:
+    - name: contextDir
+      type: string
+  workspaces:
+    - name: sources
+      description: The src dir
+    - name: internal-repo
+      description: The pulled internal repo
+      optional: true
+  steps:
+    - name: cleanup
+      securityContext:
+        runAsUser: 0
+      image: "redhat/ubi8"
+      env:
+        - name: WORKSPACE_SRC_PATH
+          value: $(workspaces.sources.path)
+        - name: WORKSPACE_INTERNAL_REPO_PATH
+          value: $(workspaces.internal-repo.path)
+      script: |
+        echo "Deleting context $WORKSPACE_SRC_PATH/$dir"
+        rm -rf "$WORKSPACE_SRC_PATH/$(params.contextDir)"
+        if [ -d "$WORKSPACE_INTERNAL_REPO_PATH" ]; then
+         echo "Deleting context $WORKSPACE_INTERNAL_REPO_PATH/$dir"
+         rm -rf "$WORKSPACE_INTERNAL_REPO_PATH/$(params.contextDir)"
+        fi

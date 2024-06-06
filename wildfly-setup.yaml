@@ -1,0 +1,33 @@
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: wildfly-setup-task
+spec:
+  results:
+    - name: contextDir
+      description: The created dir
+  workspaces:
+    - name: sources
+      description: The src dir
+    - name: internal-repo
+      description: The pulled internal repo
+      optional: true
+  steps:
+    - name: create-context
+      securityContext:
+        runAsUser: 0
+      image: "redhat/ubi8"
+      env:
+        - name: WORKSPACE_SRC_PATH
+          value: $(workspaces.sources.path)
+        - name: WORKSPACE_INTERNAL_REPO_PATH
+          value: $(workspaces.internal-repo.path)
+      script: |
+        dir=`uuidgen`
+        echo "Creating context $WORKSPACE_SRC_PATH/$dir"
+        mkdir -p "$WORKSPACE_SRC_PATH/$dir"
+        if [ -d "$WORKSPACE_INTERNAL_REPO_PATH" ]; then
+          echo "Creating context $WORKSPACE_INTERNAL_REPO_PATH/$dir"
+          mkdir -p "$WORKSPACE_INTERNAL_REPO_PATH/$dir"
+        fi
+        echo -n "$dir" > $(results.contextDir.path)

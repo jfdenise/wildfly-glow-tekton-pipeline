@@ -10,6 +10,12 @@ spec:
   workspaces:
     - name: shared-data
   tasks:
+    - name: setup
+      taskRef:
+        name: wildfly-setup-task
+      workspaces:
+        - name: sources
+          workspace: shared-data
     - name: git-clone-internal-repo
       taskRef:
         name: git-clone
@@ -22,12 +28,29 @@ spec:
           value: "$(params.gitUrl)"
         - name: revision
           value: "$(params.gitRevision)"
+        - name: subdirectory
+          value: "$(tasks.setup.results.contextDir)"
+      runAfter: 
+        - setup
     - name: deploy
       taskRef:
         name: wildfly-deploy-task
       workspaces:
         - name: sources
           workspace: shared-data
+      params:
+        - name: contentLocation
+          value: "$(tasks.setup.results.contextDir)"
       runAfter: 
         - git-clone-internal-repo
+  finally:
+    - name: cleanup
+      taskRef:
+        name: wildfly-cleanup-task
+      params:
+        - name: contextDir
+          value: "$(tasks.setup.results.contextDir)"
+      workspaces:
+        - name: sources
+          workspace: shared-data
 
