@@ -15,6 +15,9 @@ spec:
   - name: ssh-creds
     secret:
         secretName: my-ssh-credentials
+  - name: dockerconfig
+    secret:
+        secretName: dockerconfig-secret
   pipelineRef:
     name: wildfly-glow-pipeline
   params:

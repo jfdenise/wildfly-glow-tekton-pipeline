@@ -4,7 +4,9 @@ metadata:
   name: wildfly-build-docker-info-task
 spec:
   params:
-    - name: contentDir
+    - name: dockerContextDir
+      type: string
+    - name: gitContentDir
       type: string
     - name: appName
       type: string
@@ -26,25 +28,31 @@ spec:
         runAsUser: 0
       image: "redhat/ubi8"
       env:
-        - name: CONTENT_PATH
-          value: $(workspaces.sources.path)/$(params.contentDir)
+        - name: DOCKER_CONTEXT_PATH
+          value: $(workspaces.sources.path)/$(params.dockerContextDir)
+        - name: GIT_CONTENT_PATH
+          value: $(workspaces.sources.path)/$(params.gitContentDir)
       script: |
-        md5Value=($(md5sum "$CONTENT_PATH/provisioning.xml"))
-        mkdir -p $CONTENT_PATH/server
-        cat <<EOF > "$CONTENT_PATH/server/Dockerfile"
+        md5Value=($(md5sum "$DOCKER_CONTEXT_PATH/provisioning.xml"))
+        mkdir -p $GIT_CONTENT_PATH/docker/server
+        mkdir -p $DOCKER_CONTEXT_PATH/docker/server
+        cat <<EOF > "$GIT_CONTENT_PATH/docker/server/Dockerfile"
         FROM quay.io/wildfly/wildfly-runtime:latest
         COPY server \$JBOSS_HOME
         USER root
         RUN chown -R jboss:root \$JBOSS_HOME && chmod -R ug+rwX \$JBOSS_HOME
         USER jboss
         EOF
-        mkdir -p $CONTENT_PATH/app
+        cp $GIT_CONTENT_PATH/docker/server/Dockerfile $DOCKER_CONTEXT_PATH/docker/server
+        
+        mkdir -p $GIT_CONTENT_PATH/docker/app
+        mkdir -p $DOCKER_CONTEXT_PATH/docker/app
         image=quay.io/jdenise/pipeline-wildfly-server:$md5Value
         extensions=
-        if [ -d "$CONTENT_PATH/extensions" ]; then
+        if [ -d "$DOCKER_CONTEXT_PATH/extensions" ]; then
           extensions="COPY --chown=jboss:root extensions \$JBOSS_HOME/extensions"
         fi
-        cat <<EOF > "$CONTENT_PATH/app/Dockerfile"
+        cat <<EOF > "$GIT_CONTENT_PATH/docker/app/Dockerfile"
         FROM $image
         COPY deployments/* \$JBOSS_HOME/standalone/deployments
         $extensions
@@ -52,8 +60,12 @@ spec:
         RUN chown -R jboss:root \$JBOSS_HOME && chmod -R ug+rwX \$JBOSS_HOME
         USER jboss
         EOF
-        echo -n "server/Dockerfile" > $(results.serverDockerfile.path)
-        echo -n "app/Dockerfile" > $(results.appDockerfile.path)
+        cp $GIT_CONTENT_PATH/docker/app/Dockerfile $DOCKER_CONTEXT_PATH/docker/app
+        
+        appImage=quay.io/jdenise/pipeline-wildfly-$(params.appName):latest
+        echo -n "docker/server/Dockerfile" > $(results.serverDockerfile.path)
+        echo -n "docker/app/Dockerfile" > $(results.appDockerfile.path)
         echo -n "$image" > $(results.serverImage.path)
-        echo -n "quay.io/jdenise/pipeline-wildfly-$(params.appName):latest" > $(results.appImage.path)
-        echo "SERVER IMAGE TO BUILD $image" 
+        echo -n "$appImage" > $(results.appImage.path)
+        echo "app_image:$appImage" >> $GIT_CONTENT_PATH/app.properties
+        echo "server_image:$image" >> $GIT_CONTENT_PATH/app.properties
