@@ -11,6 +11,7 @@ spec:
     - name: shared-data
     - name: ssh-creds
     - name: internal-repo
+    - name: dockerconfig
   tasks:
     - name: setup
       taskRef:
@@ -51,6 +52,59 @@ spec:
           workspace: shared-data
       runAfter: 
         - git-clone-user-repo
+    - name: generate-docker-content
+      taskRef:
+        name: wildfly-build-docker-info-task
+      workspaces:
+        - name: sources
+          workspace: shared-data
+      params:
+        - name: contentDir
+          value: "$(tasks.setup.results.contextDir)/$(tasks.wildfly-glow-generate.results.provisioning)"
+        - name: appName
+          value: "$(tasks.wildfly-glow-generate.results.appName)"
+      runAfter: 
+        - wildfly-glow-generate
+    - name: build-server-image
+      taskRef:
+        name: buildah
+        kind: ClusterTask
+      params:
+        - name: IMAGE
+          value: "$(tasks.generate-docker-content.results.serverImage)"
+        - name: DOCKERFILE
+          value: "$(tasks.generate-docker-content.results.serverDockerfile)"
+        - name: CONTEXT
+          value: "$(tasks.setup.results.contextDir)/$(tasks.wildfly-glow-generate.results.provisioning)"
+        - name: TLSVERIFY
+          value: "false" 
+      runAfter: 
+        - generate-docker-content
+      workspaces:
+        - name: source
+          workspace: shared-data
+        - name: dockerconfig
+          workspace: dockerconfig
+    - name: build-app-image
+      taskRef:
+        name: buildah
+        kind: ClusterTask
+      params:
+        - name: IMAGE
+          value: "$(tasks.generate-docker-content.results.appImage)"
+        - name: DOCKERFILE
+          value: "$(tasks.generate-docker-content.results.appDockerfile)"
+        - name: CONTEXT
+          value: "$(tasks.setup.results.contextDir)/$(tasks.wildfly-glow-generate.results.provisioning)"
+        - name: TLSVERIFY
+          value: "false"
+      runAfter: 
+        - build-server-image
+      workspaces:
+        - name: source
+          workspace: shared-data
+        - name: dockerconfig
+          workspace: dockerconfig
     - name: git-clone-internal-repo
       taskRef:
         name: git-clone
@@ -121,17 +175,6 @@ spec:
       runAfter: 
         - git-clone-internal-repo
         - wildfly-glow-generate
-    - name: build-image
-      taskRef:
-        name: wildfly-build-image-task
-      params:
-        - name: contentLocation
-          value: "$(tasks.setup.results.contextDir)/$(tasks.wildfly-glow-generate.results.contentLocation)"
-      workspaces:
-        - name: sources
-          workspace: shared-data
-      runAfter: 
-        - git-create-branch-and-push
   finally:
     - name: cleanup
       taskRef:

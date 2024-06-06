@@ -1,0 +1,20 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: my-db-app2
+  namespace: glow
+spec:
+  destination:
+    namespace: glow
+    server: https://kubernetes.default.svc
+  project: default
+  source: 
+    path: resources
+    repoURL: https://github.com/jfdenise/go-to-openshift
+    targetRevision: http_github.com_jfdenise_my-db-app_revision_main
+  syncPolicy: 
+    automated:
+      prune: true
+      selfHeal: false
+    syncOptions:
+    - CreateNamespace=true

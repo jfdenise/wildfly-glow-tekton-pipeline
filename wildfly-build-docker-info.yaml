@@ -1,0 +1,59 @@
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: wildfly-build-docker-info-task
+spec:
+  params:
+    - name: contentDir
+      type: string
+    - name: appName
+      type: string
+  results:
+    - name: serverImage
+      description: server image
+    - name: appImage
+      description: app image
+    - name: serverDockerfile
+      description: where the docker file is located
+    - name: appDockerfile
+      description: where the docker file is located
+  workspaces:
+    - name: sources
+      description: The src dir
+  steps:
+    - name: generate-docker-content
+      securityContext:
+        runAsUser: 0
+      image: "redhat/ubi8"
+      env:
+        - name: CONTENT_PATH
+          value: $(workspaces.sources.path)/$(params.contentDir)
+      script: |
+        md5Value=($(md5sum "$CONTENT_PATH/provisioning.xml"))
+        mkdir -p $CONTENT_PATH/server
+        cat <<EOF > "$CONTENT_PATH/server/Dockerfile"
+        FROM quay.io/wildfly/wildfly-runtime:latest
+        COPY server \$JBOSS_HOME
+        USER root
+        RUN chown -R jboss:root \$JBOSS_HOME && chmod -R ug+rwX \$JBOSS_HOME
+        USER jboss
+        EOF
+        mkdir -p $CONTENT_PATH/app
+        image=quay.io/jdenise/pipeline-wildfly-server:$md5Value
+        extensions=
+        if [ -d "$CONTENT_PATH/extensions" ]; then
+          extensions="COPY --chown=jboss:root extensions \$JBOSS_HOME/extensions"
+        fi
+        cat <<EOF > "$CONTENT_PATH/app/Dockerfile"
+        FROM $image
+        COPY deployments/* \$JBOSS_HOME/standalone/deployments
+        $extensions
+        USER root
+        RUN chown -R jboss:root \$JBOSS_HOME && chmod -R ug+rwX \$JBOSS_HOME
+        USER jboss
+        EOF
+        echo -n "server/Dockerfile" > $(results.serverDockerfile.path)
+        echo -n "app/Dockerfile" > $(results.appDockerfile.path)
+        echo -n "$image" > $(results.serverImage.path)
+        echo -n "quay.io/jdenise/pipeline-wildfly-$(params.appName):latest" > $(results.appImage.path)
+        echo "SERVER IMAGE TO BUILD $image" 

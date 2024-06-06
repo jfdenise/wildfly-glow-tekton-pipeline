@@ -16,6 +16,10 @@ spec:
       description: The branch to create
     - name: contentLocation
       description: Where the generated content has been put
+    - name: provisioning
+      description: Where the server has been provisioned
+    - name: appName
+      description: Application ame
   workspaces:
     - name: sources
       description: The src dir
@@ -64,13 +68,19 @@ spec:
             if [ -f "$srcDir/init.sh" ]; then
               bashScript="--init-script=$srcDir/init.sh"
             fi
-            $glowDir/wildfly-glow scan $deployment --cloud --provision openshift_resources --output-dir "$WORKSPACE_SRC_PATH/wildfly-glow" --properties="-Dorg.wildfly.glow.openshift.git.uri=https://github.com/jfdenise/go-to-openshift -Dorg.wildfly.glow.openshift.git.ref=$newBranch -Dorg.wildfly.glow.openshift.app.name=$appName" $configFile $cliScript $bashScript
-            rm -rf $glowDir
+            $glowDir/wildfly-glow scan $deployment --cloud --provision openshift_resources --output-dir "$WORKSPACE_SRC_PATH/wildfly-glow" --properties="-Dorg.wildfly.glow.openshift.git.uri=https://github.com/jfdenise/go-to-openshift -Dorg.wildfly.glow.openshift.git.ref=$newBranch -Dorg.wildfly.glow.openshift.app.name=$appName -Dorg.wildfly.glow.openshift.build.namespace=wildfly-images" $configFile $cliScript $bashScript
             if [ $? == 0 ]; then
-                echo "Good to go to OpenShift!"
-
+                echo "Good to go to OpenShift, provisioning server!"
+                $glowDir/wildfly-glow scan $deployment --cloud --provision server --output-dir "$WORKSPACE_SRC_PATH/provisioning/server"
+                cp "$WORKSPACE_SRC_PATH/wildfly-glow/galleon/provisioning.xml" "$WORKSPACE_SRC_PATH/provisioning"
+                cp -r "$WORKSPACE_SRC_PATH/wildfly-glow/deployments" "$WORKSPACE_SRC_PATH/provisioning"
+                if [ -d "$WORKSPACE_SRC_PATH/wildfly-glow/extensions" ]; then
+                  cp -r "$WORKSPACE_SRC_PATH/wildfly-glow/extensions" "$WORKSPACE_SRC_PATH/provisioning"
+                fi
+                echo -n "provisioning" > $(results.provisioning.path)
                 echo -n "wildfly-glow" > $(results.contentLocation.path)
                 echo -n "$newBranch" > $(results.gitRevision.path)
+                echo -n "$appName" > $(results.appName.path)
 
                 ls -al $WORKSPACE_SRC_PATH/wildfly-glow
             else

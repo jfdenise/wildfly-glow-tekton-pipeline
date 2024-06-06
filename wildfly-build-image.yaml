@@ -19,6 +19,7 @@ spec:
         - name: RESOURCES_PATH
           value: $(workspaces.sources.path)/$(params.contentLocation)/resources/build
       script: |
+        oc project wildfly-images
         files=`ls $RESOURCES_PATH/*.yaml`
         for eachfile in $files
         do
