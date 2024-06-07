@@ -69,7 +69,9 @@ spec:
           else
             if [[ !  $eachfile =~ .*.chk ]]; then
               cp $eachfile $WORKSPACE_SRC_PATH/internal-git-repo
-              echo "$md5 $fileName" >> $WORKSPACE_SRC_PATH/internal-git-repo/app-checksum.chk
+              if [ !  $eachfile = "glow.properties" ]; then
+                echo "$md5 $fileName" >> $WORKSPACE_SRC_PATH/internal-git-repo/app-checksum.chk
+              fi
             fi
           fi
         done
@@ -86,12 +88,12 @@ spec:
         if [ -n "${deployment}" ]; then
             
             echo "Retrieving WildFly Glow"            
-            curl --insecure https://repository.jboss.org/nexus/content/repositories/snapshots/org/wildfly/glow/wildfly-glow/1.0.7.Final-SNAPSHOT/wildfly-glow-1.0.7.Final-20240607.083912-9.zip -LO
+            curl --insecure https://repository.jboss.org/nexus/content/repositories/snapshots/org/wildfly/glow/wildfly-glow/1.0.7.Final-SNAPSHOT/wildfly-glow-1.0.7.Final-20240607.125403-10.zip -LO
             unzip wildfly-glow*.zip -d .
             glowDir=`find $PWD -type d -iname "wildfly-glow*"`
             configFile=
-            if [ -f "$srcDir/glow.config" ]; then
-              configFile="--cli-config-file=$srcDir/glow.config"
+            if [ -f "$srcDir/glow.properties" ]; then
+              configFile="--config-file=$srcDir/glow.properties"
             fi
             cliScript=
             if [ -f "$srcDir/script.cli" ]; then
@@ -115,9 +117,9 @@ spec:
             md5Value=($(md5sum "$WORKSPACE_SRC_PATH/scan-results/galleon/provisioning.xml"))
             serverImage=quay.io/jdenise/pipeline-wildfly-server:$md5Value
             echo "server_image:$serverImage" >> "$WORKSPACE_SRC_PATH/internal-git-repo/app.properties"
-            echo "$md5 galleon/provisioning.xml" >> $WORKSPACE_SRC_PATH/internal-git-repo/app-checksum.chk
-            echo "$md5 galleon/provisioning.xml" >> $WORKSPACE_SRC_PATH/internal-git-repo/server-checksum.chk
-            
+            echo "$md5Value galleon/provisioning.xml" >> $WORKSPACE_SRC_PATH/internal-git-repo/app-checksum.chk
+            echo "$md5Value galleon/provisioning.xml" >> $WORKSPACE_SRC_PATH/internal-git-repo/server-checksum.chk
+
             # We need to build the server image if no checksum file exists or is different
             buildServerImage="true"
             if [ -f "$WORKSPACE_CURRENT_REPO_PATH/server-checksum.chk" ]; then
@@ -148,7 +150,8 @@ spec:
             fi
             echo -n "$buildAppImage" > $(results.needBuildAppImage.path)
             echo -n "$buildServerImage" > $(results.needBuildServerImage.path)
-
+            # provisioning directory is required for both server and app image
+            echo -n "provisioning" > $(results.provisioning.path)
             if [ $buildAppImage = "true" ]; then
               echo "Must build app image"
               # copy deployments in docker context
@@ -187,7 +190,6 @@ spec:
               echo "Must build server image"
               # provision server
               $glowDir/wildfly-glow scan $deployment --cloud --provision server --output-dir "$WORKSPACE_SRC_PATH/provisioning/server" $configFile
-              echo -n "provisioning" > $(results.provisioning.path)
               echo -n "$serverImage" > $(results.serverImage.path)
               
               # Generate Docker file
