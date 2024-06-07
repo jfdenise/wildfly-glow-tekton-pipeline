@@ -88,7 +88,7 @@ spec:
         if [ -n "${deployment}" ]; then
             
             echo "Retrieving WildFly Glow"            
-            curl --insecure https://repository.jboss.org/nexus/content/repositories/snapshots/org/wildfly/glow/wildfly-glow/1.0.7.Final-SNAPSHOT/wildfly-glow-1.0.7.Final-20240607.125403-10.zip -LO
+            curl --insecure https://repository.jboss.org/nexus/content/repositories/snapshots/org/wildfly/glow/wildfly-glow/1.0.7.Final-SNAPSHOT/wildfly-glow-1.0.7.Final-20240607.141231-11.zip -LO
             unzip wildfly-glow*.zip -d .
             glowDir=`find $PWD -type d -iname "wildfly-glow*"`
             configFile=
@@ -195,7 +195,12 @@ spec:
               # Generate Docker file
               mkdir -p $WORKSPACE_SRC_PATH/internal-git-repo/docker/server
               mkdir -p $WORKSPACE_SRC_PATH/provisioning/docker/server
-
+              labelsFile="$WORKSPACE_SRC_PATH/scan-results/resources/build/labels.properties"
+              while IFS='=' read -r key value; do
+                if [[ ! $key =~ \#.* ]]; then
+                  echo "LABEL $key=$value" >> "$WORKSPACE_SRC_PATH/internal-git-repo/docker/server/Dockerfile"
+                fi
+              done < "$labelsFile"
               echo "FROM quay.io/wildfly/wildfly-runtime:latest" >> "$WORKSPACE_SRC_PATH/internal-git-repo/docker/server/Dockerfile"
               echo "COPY server \$JBOSS_HOME" >> "$WORKSPACE_SRC_PATH/internal-git-repo/docker/server/Dockerfile"
               echo "USER root" >> "$WORKSPACE_SRC_PATH/internal-git-repo/docker/server/Dockerfile"
