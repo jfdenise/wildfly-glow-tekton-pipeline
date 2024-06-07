@@ -21,6 +21,16 @@ spec:
           workspace: shared-data
         - name: internal-repo
           workspace: internal-repo
+    - name: identify-branch
+      params:
+        - name: gitUrl
+          value: "$(params.gitUrl)"
+        - name: gitRevision
+          value: "$(params.gitRevision)"
+      taskRef:
+        name: wildfly-identify-branch-task
+      runAfter: 
+        - setup
     - name: git-clone-user-repo
       taskRef:
         name: git-clone
@@ -36,7 +46,7 @@ spec:
         - name: subdirectory
           value: "$(tasks.setup.results.contextDir)"
       runAfter: 
-        - setup
+        - identify-branch
     - name: git-clone-internal-repo
       taskRef:
         name: git-clone
@@ -50,11 +60,11 @@ spec:
         - name: url
           value: "git@github.com:jfdenise/go-to-openshift"
         - name: revision
-          value: "main"
+          value: "$(tasks.identify-branch.results.branchToPull)"
         - name: subdirectory
           value: "$(tasks.setup.results.contextDir)"
       runAfter: 
-        - setup
+        - identify-branch
     - name: wildfly-glow-generate-provision
       taskRef:
         name: wildfly-glow-generator-task
@@ -63,45 +73,37 @@ spec:
           value: "$(params.gitUrl)"
         - name: gitRevision
           value: "$(params.gitRevision)"
-        - name: sourcesDir
+        - name: contextDir
           value: "$(tasks.setup.results.contextDir)"
+        - name: newBranch
+          value: "$(tasks.identify-branch.results.newBranch)"
       workspaces:
         - name: sources
           workspace: shared-data
+        - name: current-repo
+          workspace: internal-repo
       runAfter: 
         - git-clone-user-repo
-    - name: generate-docker-files
-      taskRef:
-        name: wildfly-build-docker-info-task
-      workspaces:
-        - name: sources
-          workspace: shared-data
-      params:
-        - name: dockerContextDir
-          value: "$(tasks.setup.results.contextDir)/$(tasks.wildfly-glow-generate-provision.results.provisioning)"
-        - name: gitContentDir
-          value: "$(tasks.setup.results.contextDir)/$(tasks.wildfly-glow-generate-provision.results.contentLocation)"
-        - name: appImage
-          value: "$(tasks.wildfly-glow-generate-provision.results.appImage)"
-        - name: serverImage
-          value: "$(tasks.wildfly-glow-generate-provision.results.serverImage)"
-      runAfter: 
-        - wildfly-glow-generate-provision
+        - git-clone-internal-repo
     - name: build-server-image
       taskRef:
         name: buildah
         kind: ClusterTask
+      when:
+      - input: "$(tasks.wildfly-glow-generate-provision.results.needBuildServerImage)"
+        operator: in
+        values: ["true"]
       params:
         - name: IMAGE
           value: "$(tasks.wildfly-glow-generate-provision.results.serverImage)"
         - name: DOCKERFILE
-          value: "$(tasks.generate-docker-files.results.serverDockerfile)"
+          value: "$(tasks.wildfly-glow-generate-provision.results.serverDockerfile)"
         - name: CONTEXT
           value: "$(tasks.setup.results.contextDir)/$(tasks.wildfly-glow-generate-provision.results.provisioning)"
         - name: TLSVERIFY
           value: "false" 
       runAfter: 
-        - generate-docker-files
+        - wildfly-glow-generate-provision
       workspaces:
         - name: source
           workspace: shared-data
@@ -111,11 +113,15 @@ spec:
       taskRef:
         name: buildah
         kind: ClusterTask
+      when:
+      - input: "$(tasks.wildfly-glow-generate-provision.results.needBuildAppImage)"
+        operator: in
+        values: ["true"]
       params:
         - name: IMAGE
           value: "$(tasks.wildfly-glow-generate-provision.results.appImage)"
         - name: DOCKERFILE
-          value: "$(tasks.generate-docker-files.results.appDockerfile)"
+          value: "$(tasks.wildfly-glow-generate-provision.results.appDockerfile)"
         - name: CONTEXT
           value: "$(tasks.setup.results.contextDir)/$(tasks.wildfly-glow-generate-provision.results.provisioning)"
         - name: TLSVERIFY
@@ -140,14 +146,14 @@ spec:
           value: |
            cd $(tasks.setup.results.contextDir) 
            git config --global --add safe.directory /workspace/source/$(tasks.setup.results.contextDir)
-           rev=$(tasks.wildfly-glow-generate-provision.results.gitRevision)
+           rev=$(tasks.identify-branch.results.newBranch)
            exists=`git ls-remote --heads git@github.com:jfdenise/go-to-openshift "refs/heads/${rev}" | wc -l`
            if [ "${exists}" = "1" ]; then
              echo "A branch already exists"
-             git fetch origin "$(tasks.wildfly-glow-generate-provision.results.gitRevision)"
-             git checkout "$(tasks.wildfly-glow-generate-provision.results.gitRevision)"
+             git fetch origin "$(tasks.identify-branch.results.newBranch)"
+             git checkout "$(tasks.identify-branch.results.newBranch)"
            else
-             git checkout -b "$(tasks.wildfly-glow-generate-provision.results.gitRevision)"
+             git checkout -b "$(tasks.identify-branch.results.newBranch)"
            fi
            # Remove all
            rm -rf ./*
@@ -165,7 +171,7 @@ spec:
              git add *
              git add */.*
              git commit -m "Commit from WildFly Glow pipeline"
-             git push origin "$(tasks.wildfly-glow-generate-provision.results.gitRevision)"
+             git push origin "$(tasks.identify-branch.results.newBranch)"
            else
              echo "No changes to commit";
            fi
@@ -178,7 +184,6 @@ spec:
           workspace: ssh-creds
       runAfter: 
         - build-app-image
-        - git-clone-internal-repo
   finally:
     - name: cleanup
       taskRef:
