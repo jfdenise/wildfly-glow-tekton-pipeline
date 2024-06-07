@@ -70,7 +70,7 @@ spec:
           workspace: shared-data
       runAfter: 
         - git-clone-user-repo
-    - name: generate-docker-content
+    - name: generate-docker-files
       taskRef:
         name: wildfly-build-docker-info-task
       workspaces:
@@ -81,8 +81,10 @@ spec:
           value: "$(tasks.setup.results.contextDir)/$(tasks.wildfly-glow-generate-provision.results.provisioning)"
         - name: gitContentDir
           value: "$(tasks.setup.results.contextDir)/$(tasks.wildfly-glow-generate-provision.results.contentLocation)"
-        - name: appName
-          value: "$(tasks.wildfly-glow-generate-provision.results.appName)"
+        - name: appImage
+          value: "$(tasks.wildfly-glow-generate-provision.results.appImage)"
+        - name: serverImage
+          value: "$(tasks.wildfly-glow-generate-provision.results.serverImage)"
       runAfter: 
         - wildfly-glow-generate-provision
     - name: build-server-image
@@ -91,15 +93,15 @@ spec:
         kind: ClusterTask
       params:
         - name: IMAGE
-          value: "$(tasks.generate-docker-content.results.serverImage)"
+          value: "$(tasks.wildfly-glow-generate-provision.results.serverImage)"
         - name: DOCKERFILE
-          value: "$(tasks.generate-docker-content.results.serverDockerfile)"
+          value: "$(tasks.generate-docker-files.results.serverDockerfile)"
         - name: CONTEXT
           value: "$(tasks.setup.results.contextDir)/$(tasks.wildfly-glow-generate-provision.results.provisioning)"
         - name: TLSVERIFY
           value: "false" 
       runAfter: 
-        - generate-docker-content
+        - generate-docker-files
       workspaces:
         - name: source
           workspace: shared-data
@@ -111,9 +113,9 @@ spec:
         kind: ClusterTask
       params:
         - name: IMAGE
-          value: "$(tasks.generate-docker-content.results.appImage)"
+          value: "$(tasks.wildfly-glow-generate-provision.results.appImage)"
         - name: DOCKERFILE
-          value: "$(tasks.generate-docker-content.results.appDockerfile)"
+          value: "$(tasks.generate-docker-files.results.appDockerfile)"
         - name: CONTEXT
           value: "$(tasks.setup.results.contextDir)/$(tasks.wildfly-glow-generate-provision.results.provisioning)"
         - name: TLSVERIFY

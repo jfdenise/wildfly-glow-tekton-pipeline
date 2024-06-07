@@ -18,8 +18,10 @@ spec:
       description: Where the generated content has been put
     - name: provisioning
       description: Where the server has been provisioned
-    - name: appName
-      description: Application ame
+    - name: appImage
+      description: Application image
+    - name: serverImage
+      description: Server image
   workspaces:
     - name: sources
       description: The src dir
@@ -52,15 +54,17 @@ spec:
         gitId=$(params.gitUrl)/revision/$(params.gitRevision)
         newBranch=`tr -s :@#/ _ <<< "$gitId"`
         appName=${gitURI##*/}
+        appImage=quay.io/jdenise/pipeline-wildfly-$appName:latest
         cat <<EOF > "$WORKSPACE_SRC_PATH/internal-git-repo/app.properties"
         git_url:$(params.gitUrl)
         git_revision:$(params.gitRevision)
         app_name:$appName
+        app_image:$appImage
         EOF
         if [ -n "${deployment}" ]; then
             
             echo "Retrieving WildFly Glow"            
-            curl --insecure https://repository.jboss.org/nexus/content/repositories/snapshots/org/wildfly/glow/wildfly-glow/1.0.7.Final-SNAPSHOT/wildfly-glow-1.0.7.Final-20240606.090716-8.zip -LO
+            curl --insecure https://repository.jboss.org/nexus/content/repositories/snapshots/org/wildfly/glow/wildfly-glow/1.0.7.Final-SNAPSHOT/wildfly-glow-1.0.7.Final-20240607.083912-9.zip -LO
             unzip wildfly-glow*.zip -d .
             glowDir=`find $PWD -type d -iname "wildfly-glow*"`
             configFile=
@@ -75,33 +79,37 @@ spec:
             if [ -f "$srcDir/init.sh" ]; then
               bashScript="--init-script=$srcDir/init.sh"
             fi
-            $glowDir/wildfly-glow scan $deployment --cloud --provision openshift_resources --output-dir "$WORKSPACE_SRC_PATH/scan-results" --properties="-Dorg.wildfly.glow.openshift.git.uri=https://github.com/jfdenise/go-to-openshift -Dorg.wildfly.glow.openshift.git.ref=$newBranch -Dorg.wildfly.glow.openshift.app.name=$appName -Dorg.wildfly.glow.openshift.build.namespace=wildfly-images" $configFile $cliScript $bashScript
-            ls -l "$WORKSPACE_SRC_PATH/scan-results/resources"
-            
-            if [ $? == 0 ]; then
-                echo "Good to go to OpenShift, provisioning server!"
-                $glowDir/wildfly-glow scan $deployment --cloud --provision server --output-dir "$WORKSPACE_SRC_PATH/provisioning/server" $configFile
-                cp "$WORKSPACE_SRC_PATH/scan-results/galleon/provisioning.xml" "$WORKSPACE_SRC_PATH/provisioning"
-                cp -r "$WORKSPACE_SRC_PATH/scan-results/galleon" "$WORKSPACE_SRC_PATH/internal-git-repo"
-                cp -r "$WORKSPACE_SRC_PATH/scan-results/deployments" "$WORKSPACE_SRC_PATH/provisioning"
-                if [ -d "$WORKSPACE_SRC_PATH/scan-results/extensions" ]; then
-                  cp -r "$WORKSPACE_SRC_PATH/scan-results/extensions" "$WORKSPACE_SRC_PATH/provisioning"
-                fi
-                mkdir "$WORKSPACE_SRC_PATH/internal-git-repo/openshift"
-                cp "$WORKSPACE_SRC_PATH"/scan-results/resources/deployment/*.yaml "$WORKSPACE_SRC_PATH/internal-git-repo/openshift"
-                if [ -d "$WORKSPACE_SRC_PATH/scan-results/resources/deployers" ]; then
-                  cp "$WORKSPACE_SRC_PATH"/scan-results/resources/deployers/*.yaml "$WORKSPACE_SRC_PATH/internal-git-repo/openshift"
-                fi
-                echo -n "provisioning" > $(results.provisioning.path)
-                echo -n "internal-git-repo" > $(results.contentLocation.path)
-                echo -n "$newBranch" > $(results.gitRevision.path)
-                echo -n "$appName" > $(results.appName.path)
 
-                ls -al $WORKSPACE_SRC_PATH/internal-git-repo
-            else
-                echo "Error while scanning the deployment!"
-                exit 1
+            # generate provisioning and openshift resources
+            $glowDir/wildfly-glow scan $deployment --cloud --provision openshift_resources --output-dir "$WORKSPACE_SRC_PATH/scan-results" --properties="-Dorg.wildfly.glow.openshift.git.uri=https://github.com/jfdenise/go-to-openshift -Dorg.wildfly.glow.openshift.git.ref=$newBranch -Dorg.wildfly.glow.openshift.app.name=$appName -Dorg.wildfly.glow.openshift.deployment.docker.image=$appImage" $configFile $cliScript $bashScript
+            cp -r "$WORKSPACE_SRC_PATH/scan-results/galleon" "$WORKSPACE_SRC_PATH/internal-git-repo"
+            md5Value=($(md5sum "$WORKSPACE_SRC_PATH/scan-results/galleon/provisioning.xml"))
+            serverImage=quay.io/jdenise/pipeline-wildfly-server:$md5Value
+            echo "server_image:$serverImage" >> "$WORKSPACE_SRC_PATH/internal-git-repo/app.properties"
+            
+            # copy deployments in docker context
+            mkdir -p $WORKSPACE_SRC_PATH/provisioning
+            cp -r "$WORKSPACE_SRC_PATH/scan-results/deployments" "$WORKSPACE_SRC_PATH/provisioning"
+            # extensions, cli script and bash script packaged to be run at startup
+            if [ -d "$WORKSPACE_SRC_PATH/scan-results/extensions" ]; then
+              cp -r "$WORKSPACE_SRC_PATH/scan-results/extensions" "$WORKSPACE_SRC_PATH/provisioning"
             fi
+            # openshift resources
+            mkdir "$WORKSPACE_SRC_PATH/internal-git-repo/openshift"
+            cp "$WORKSPACE_SRC_PATH"/scan-results/resources/deployment/*.yaml "$WORKSPACE_SRC_PATH/internal-git-repo/openshift"
+            if [ -d "$WORKSPACE_SRC_PATH/scan-results/resources/deployers" ]; then
+              cp "$WORKSPACE_SRC_PATH"/scan-results/resources/deployers/*.yaml "$WORKSPACE_SRC_PATH/internal-git-repo/openshift"
+            fi
+            
+            # provision server
+            $glowDir/wildfly-glow scan $deployment --cloud --provision server --output-dir "$WORKSPACE_SRC_PATH/provisioning/server" $configFile
+ 
+            echo -n "provisioning" > $(results.provisioning.path)
+            echo -n "internal-git-repo" > $(results.contentLocation.path)
+            echo -n "$newBranch" > $(results.gitRevision.path)
+            echo -n "$serverImage" > $(results.serverImage.path)
+            echo -n "$appImage" > $(results.appImage.path)
+            ls -al $WORKSPACE_SRC_PATH/internal-git-repo
         else
             echo "No deployment to scan!"
             exit 1

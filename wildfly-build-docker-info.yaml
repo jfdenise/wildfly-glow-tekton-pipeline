@@ -8,13 +8,11 @@ spec:
       type: string
     - name: gitContentDir
       type: string
-    - name: appName
+    - name: serverImage
+      type: string
+    - name: appImage
       type: string
   results:
-    - name: serverImage
-      description: server image
-    - name: appImage
-      description: app image
     - name: serverDockerfile
       description: where the docker file is located
     - name: appDockerfile
@@ -33,7 +31,6 @@ spec:
         - name: GIT_CONTENT_PATH
           value: $(workspaces.sources.path)/$(params.gitContentDir)
       script: |
-        md5Value=($(md5sum "$DOCKER_CONTEXT_PATH/provisioning.xml"))
         mkdir -p $GIT_CONTENT_PATH/docker/server
         mkdir -p $DOCKER_CONTEXT_PATH/docker/server
         cat <<EOF > "$GIT_CONTENT_PATH/docker/server/Dockerfile"
@@ -47,13 +44,13 @@ spec:
         
         mkdir -p $GIT_CONTENT_PATH/docker/app
         mkdir -p $DOCKER_CONTEXT_PATH/docker/app
-        image=quay.io/jdenise/pipeline-wildfly-server:$md5Value
+        
         extensions=
         if [ -d "$DOCKER_CONTEXT_PATH/extensions" ]; then
           extensions="COPY --chown=jboss:root extensions \$JBOSS_HOME/extensions"
         fi
         cat <<EOF > "$GIT_CONTENT_PATH/docker/app/Dockerfile"
-        FROM $image
+        FROM $(params.serverImage)
         COPY deployments/* \$JBOSS_HOME/standalone/deployments
         $extensions
         USER root
@@ -62,10 +59,5 @@ spec:
         EOF
         cp $GIT_CONTENT_PATH/docker/app/Dockerfile $DOCKER_CONTEXT_PATH/docker/app
         
-        appImage=quay.io/jdenise/pipeline-wildfly-$(params.appName):latest
         echo -n "docker/server/Dockerfile" > $(results.serverDockerfile.path)
         echo -n "docker/app/Dockerfile" > $(results.appDockerfile.path)
-        echo -n "$image" > $(results.serverImage.path)
-        echo -n "$appImage" > $(results.appImage.path)
-        echo "app_image:$appImage" >> $GIT_CONTENT_PATH/app.properties
-        echo "server_image:$image" >> $GIT_CONTENT_PATH/app.properties
