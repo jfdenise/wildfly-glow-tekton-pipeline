@@ -1,0 +1,23 @@
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: wildfly-import-image-task
+spec:
+  params:
+    - name: appImage
+      description: application image
+    - name: tag
+      description: application image tag
+    - name: appName
+      description: AppName used for the image stream
+      
+  steps:
+    - name: import-image
+      securityContext:
+        runAsUser: 0
+      image: "image-registry.openshift-image-registry.svc:5000/openshift/cli:latest"
+      script: |
+        echo "Importing Image $(params.appImage)"
+        oc import-image $(params.appName):$(params.tag) --from=$(params.appImage):$(params.tag) --confirm
+        oc tag $(params.appName):$(params.tag) $(params.appName):latest
+        oc set image-lookup $(params.appName)

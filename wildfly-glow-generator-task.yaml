@@ -22,6 +22,8 @@ spec:
       description: Where the server has been provisioned
     - name: appImage
       description: Application image
+    - name: appName
+      description: Application name
     - name: serverImage
       description: Server image
     - name: needBuildServerImage
@@ -78,6 +80,7 @@ spec:
         gitURI=$(params.gitUrl)
         newBranch=$(params.newBranch)
         appName=${gitURI##*/}
+        echo -n "$appName" > $(results.appName.path)
         cat <<EOF > "$WORKSPACE_SRC_PATH/internal-git-repo/app.properties"
         git_url:$(params.gitUrl)
         git_revision:$(params.gitRevision)

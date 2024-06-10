@@ -89,6 +89,10 @@ spec:
       taskRef:
         name: git-cli
         kind: ClusterTask
+      when:
+      - input: "$(tasks.wildfly-glow-generate-provision.results.needBuildAppImage)"
+        operator: in
+        values: ["true"]
       params:
         - name: GIT_USER_NAME
           value: jfdenise
@@ -208,6 +212,26 @@ spec:
           workspace: ssh-creds
       runAfter: 
         - build-app-image
+      when:
+      - input: "$(tasks.wildfly-glow-generate-provision.results.needBuildAppImage)"
+        operator: in
+        values: ["true"]
+    - name: import-image
+      taskRef:
+        name: wildfly-import-image-task
+      when:
+      - input: "$(tasks.wildfly-glow-generate-provision.results.needBuildAppImage)"
+        operator: in
+        values: ["true"]
+      params:
+        - name: appName
+          value: $(tasks.wildfly-glow-generate-provision.results.appName)
+        - name: appImage
+          value: $(tasks.wildfly-glow-generate-provision.results.appImage)
+        - name: tag
+          value: $(tasks.git-create-branch-and-commit.results.commit)
+      runAfter: 
+        - git-push
   finally:
     - name: cleanup
       taskRef:
