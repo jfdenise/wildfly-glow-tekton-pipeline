@@ -60,35 +60,33 @@ spec:
         echo -n "internal-git-repo" > $(results.contentLocation.path)
         for eachfile in $files
         do
-          md5=($(md5sum "$eachfile"))
+          #md5=($(md5sum "$eachfile"))
           fileName=$(basename $eachfile)
           if [[ $eachfile =~ .*.war ]] || [[ $eachfile =~ .*.jar ]] || [[ $eachfile =~ .*.ear ]]; then
             deployment="$deployment $eachfile"
             cp $eachfile $WORKSPACE_SRC_PATH/internal-git-repo/deployments
-            echo "$md5 $fileName" >> $WORKSPACE_SRC_PATH/internal-git-repo/app-checksum.chk
+            #echo "$md5 $fileName" >> $WORKSPACE_SRC_PATH/internal-git-repo/app-checksum.chk
           else
             if [[ !  $eachfile =~ .*.chk ]]; then
               cp $eachfile $WORKSPACE_SRC_PATH/internal-git-repo
-              if [ !  $eachfile = "glow.properties" ]; then
-                echo "$md5 $fileName" >> $WORKSPACE_SRC_PATH/internal-git-repo/app-checksum.chk
-              fi
+             # if [ !  $eachfile = "glow.properties" ]; then
+             #   echo "$md5 $fileName" >> $WORKSPACE_SRC_PATH/internal-git-repo/app-checksum.chk
+             # fi
             fi
           fi
         done
         gitURI=$(params.gitUrl)
         newBranch=$(params.newBranch)
         appName=${gitURI##*/}
-        appImage=quay.io/jdenise/pipeline-wildfly-$appName:latest
         cat <<EOF > "$WORKSPACE_SRC_PATH/internal-git-repo/app.properties"
         git_url:$(params.gitUrl)
         git_revision:$(params.gitRevision)
         app_name:$appName
-        app_image:$appImage
         EOF
         if [ -n "${deployment}" ]; then
             
             echo "Retrieving WildFly Glow"            
-            curl --insecure https://repository.jboss.org/nexus/content/repositories/snapshots/org/wildfly/glow/wildfly-glow/1.0.7.Final-SNAPSHOT/wildfly-glow-1.0.7.Final-20240607.141231-11.zip -LO
+            curl --insecure https://repository.jboss.org/nexus/content/repositories/snapshots/org/wildfly/glow/wildfly-glow/1.0.7.Final-SNAPSHOT/wildfly-glow-1.0.7.Final-20240610.114222-13.zip -LO
             unzip wildfly-glow*.zip -d .
             glowDir=`find $PWD -type d -iname "wildfly-glow*"`
             configFile=
@@ -105,20 +103,31 @@ spec:
             fi
 
             # generate provisioning and openshift resources
-            $glowDir/wildfly-glow scan $deployment --cloud --provision openshift_resources --output-dir "$WORKSPACE_SRC_PATH/scan-results" --properties="-Dorg.wildfly.glow.openshift.git.uri=https://github.com/jfdenise/go-to-openshift -Dorg.wildfly.glow.openshift.git.ref=$newBranch -Dorg.wildfly.glow.openshift.app.name=$appName -Dorg.wildfly.glow.openshift.deployment.docker.image=$appImage" $configFile $cliScript $bashScript
+            $glowDir/wildfly-glow scan $deployment --cloud --provision openshift_resources --output-dir "$WORKSPACE_SRC_PATH/scan-results" --properties="-Dorg.wildfly.glow.openshift.git.uri=https://github.com/jfdenise/go-to-openshift -Dorg.wildfly.glow.openshift.git.ref=$newBranch -Dorg.wildfly.glow.openshift.app.name=$appName -Dorg.wildfly.glow.openshift.server.image=quay.io/jdenise/pipeline-wildfly-server" $configFile $cliScript $bashScript
+            ls -l "$WORKSPACE_SRC_PATH"/scan-results/resources/docker/app
+            ls -l "$WORKSPACE_SRC_PATH"/scan-results/resources/docker/server
             cp -r "$WORKSPACE_SRC_PATH/scan-results/galleon" "$WORKSPACE_SRC_PATH/internal-git-repo"
             # openshift resources
             mkdir "$WORKSPACE_SRC_PATH/internal-git-repo/openshift"
             cp "$WORKSPACE_SRC_PATH"/scan-results/resources/deployment/*.yaml "$WORKSPACE_SRC_PATH/internal-git-repo/openshift"
+            cp "$WORKSPACE_SRC_PATH"/scan-results/resources/images/*.yaml "$WORKSPACE_SRC_PATH/internal-git-repo/openshift"
             if [ -d "$WORKSPACE_SRC_PATH/scan-results/resources/deployers" ]; then
               cp "$WORKSPACE_SRC_PATH"/scan-results/resources/deployers/*.yaml "$WORKSPACE_SRC_PATH/internal-git-repo/openshift"
             fi
             
-            md5Value=($(md5sum "$WORKSPACE_SRC_PATH/scan-results/galleon/provisioning.xml"))
-            serverImage=quay.io/jdenise/pipeline-wildfly-server:$md5Value
-            echo "server_image:$serverImage" >> "$WORKSPACE_SRC_PATH/internal-git-repo/app.properties"
-            echo "$md5Value galleon/provisioning.xml" >> $WORKSPACE_SRC_PATH/internal-git-repo/app-checksum.chk
-            echo "$md5Value galleon/provisioning.xml" >> $WORKSPACE_SRC_PATH/internal-git-repo/server-checksum.chk
+            imageProperties="$WORKSPACE_SRC_PATH"/scan-results/resources/images/images.properties
+            while IFS="=" read -r key value; do
+            case "$key" in
+             "server-image-tag") serverTag="$value" ;;
+             "app-image-tag") appTag="$value" ;;
+            esac
+            done < "$imageProperties"
+
+            serverImage=quay.io/jdenise/pipeline-wildfly-server:$serverTag
+            appImage=quay.io/jdenise/pipeline-wildfly-$appName
+            echo "$serverTag serverHash" >> $WORKSPACE_SRC_PATH/internal-git-repo/app-checksum.chk
+            echo "$appTag appHash" >> $WORKSPACE_SRC_PATH/internal-git-repo/app-checksum.chk
+            echo "$serverTag serverHash" >> $WORKSPACE_SRC_PATH/internal-git-repo/server-checksum.chk
 
             # We need to build the server image if no checksum file exists or is different
             buildServerImage="true"
@@ -162,22 +171,10 @@ spec:
                 cp -r "$WORKSPACE_SRC_PATH/scan-results/extensions" "$WORKSPACE_SRC_PATH/provisioning"
               fi
               echo -n "$appImage" > $(results.appImage.path)
-              
-              # Generate Docker file
-              mkdir -p $WORKSPACE_SRC_PATH/internal-git-repo/docker/app
+              # Copy Docker file
+              mkdir -p "$WORKSPACE_SRC_PATH"/internal-git-repo/docker/app
+              cp "$WORKSPACE_SRC_PATH"/scan-results/resources/docker/app/Dockerfile $WORKSPACE_SRC_PATH/internal-git-repo/docker/app
               mkdir -p $WORKSPACE_SRC_PATH/provisioning/docker/app
-        
-              extensions=
-              if [ -d "$WORKSPACE_SRC_PATH/provisioning/extensions" ]; then
-                extensions="COPY --chown=jboss:root extensions \$JBOSS_HOME/extensions"
-              fi
-              echo "FROM $serverImage" >> "$WORKSPACE_SRC_PATH/internal-git-repo/docker/app/Dockerfile"
-              echo "COPY deployments/* \$JBOSS_HOME/standalone/deployments" >> "$WORKSPACE_SRC_PATH/internal-git-repo/docker/app/Dockerfile"
-              echo $extensions >> "$WORKSPACE_SRC_PATH/internal-git-repo/docker/app/Dockerfile"
-              echo "USER root" >> "$WORKSPACE_SRC_PATH/internal-git-repo/docker/app/Dockerfile"
-              echo "RUN chown -R jboss:root \$JBOSS_HOME && chmod -R ug+rwX \$JBOSS_HOME" >> "$WORKSPACE_SRC_PATH/internal-git-repo/docker/app/Dockerfile"
-              echo "USER jboss" >> "$WORKSPACE_SRC_PATH/internal-git-repo/docker/app/Dockerfile"
-              
               cp $WORKSPACE_SRC_PATH/internal-git-repo/docker/app/Dockerfile "$WORKSPACE_SRC_PATH/provisioning/docker/app"
               echo -n "docker/app/Dockerfile" > $(results.appDockerfile.path)
             else
@@ -192,21 +189,10 @@ spec:
               $glowDir/wildfly-glow scan $deployment --cloud --provision server --output-dir "$WORKSPACE_SRC_PATH/provisioning/server" $configFile
               echo -n "$serverImage" > $(results.serverImage.path)
               
-              # Generate Docker file
-              mkdir -p $WORKSPACE_SRC_PATH/internal-git-repo/docker/server
+              # Copy Docker file
+              mkdir -p "$WORKSPACE_SRC_PATH"/internal-git-repo/docker/server
+              cp "$WORKSPACE_SRC_PATH"/scan-results/resources/docker/server/Dockerfile $WORKSPACE_SRC_PATH/internal-git-repo/docker/server
               mkdir -p $WORKSPACE_SRC_PATH/provisioning/docker/server
-              labelsFile="$WORKSPACE_SRC_PATH/scan-results/resources/build/labels.properties"
-              while IFS='=' read -r key value; do
-                if [[ ! $key =~ \#.* ]]; then
-                  echo "LABEL $key=$value" >> "$WORKSPACE_SRC_PATH/internal-git-repo/docker/server/Dockerfile"
-                fi
-              done < "$labelsFile"
-              echo "FROM quay.io/wildfly/wildfly-runtime:latest" >> "$WORKSPACE_SRC_PATH/internal-git-repo/docker/server/Dockerfile"
-              echo "COPY server \$JBOSS_HOME" >> "$WORKSPACE_SRC_PATH/internal-git-repo/docker/server/Dockerfile"
-              echo "USER root" >> "$WORKSPACE_SRC_PATH/internal-git-repo/docker/server/Dockerfile"
-              echo "RUN chown -R jboss:root \$JBOSS_HOME && chmod -R ug+rwX \$JBOSS_HOME" >> "$WORKSPACE_SRC_PATH/internal-git-repo/docker/server/Dockerfile"
-              echo "USER jboss" >> "$WORKSPACE_SRC_PATH/internal-git-repo/docker/server/Dockerfile"
-
               cp $WORKSPACE_SRC_PATH/internal-git-repo/docker/server/Dockerfile $WORKSPACE_SRC_PATH/provisioning/docker/server
               echo -n "docker/server/Dockerfile" > $(results.serverDockerfile.path)
             else

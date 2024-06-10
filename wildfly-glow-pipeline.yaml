@@ -85,55 +85,7 @@ spec:
       runAfter: 
         - git-clone-user-repo
         - git-clone-internal-repo
-    - name: build-server-image
-      taskRef:
-        name: buildah
-        kind: ClusterTask
-      when:
-      - input: "$(tasks.wildfly-glow-generate-provision.results.needBuildServerImage)"
-        operator: in
-        values: ["true"]
-      params:
-        - name: IMAGE
-          value: "$(tasks.wildfly-glow-generate-provision.results.serverImage)"
-        - name: DOCKERFILE
-          value: "$(tasks.wildfly-glow-generate-provision.results.serverDockerfile)"
-        - name: CONTEXT
-          value: "$(tasks.setup.results.contextDir)/$(tasks.wildfly-glow-generate-provision.results.provisioning)"
-        - name: TLSVERIFY
-          value: "false" 
-      runAfter: 
-        - wildfly-glow-generate-provision
-      workspaces:
-        - name: source
-          workspace: shared-data
-        - name: dockerconfig
-          workspace: dockerconfig
-    - name: build-app-image
-      taskRef:
-        name: buildah
-        kind: ClusterTask
-      when:
-      - input: "$(tasks.wildfly-glow-generate-provision.results.needBuildAppImage)"
-        operator: in
-        values: ["true"]
-      params:
-        - name: IMAGE
-          value: "$(tasks.wildfly-glow-generate-provision.results.appImage)"
-        - name: DOCKERFILE
-          value: "$(tasks.wildfly-glow-generate-provision.results.appDockerfile)"
-        - name: CONTEXT
-          value: "$(tasks.setup.results.contextDir)/$(tasks.wildfly-glow-generate-provision.results.provisioning)"
-        - name: TLSVERIFY
-          value: "false"
-      runAfter: 
-        - build-server-image
-      workspaces:
-        - name: source
-          workspace: shared-data
-        - name: dockerconfig
-          workspace: dockerconfig
-    - name: git-create-branch-and-push
+    - name: git-create-branch-and-commit
       taskRef:
         name: git-cli
         kind: ClusterTask
@@ -171,10 +123,82 @@ spec:
              git add *
              git add */.*
              git commit -m "Commit from WildFly Glow pipeline"
-             git push origin "$(tasks.identify-branch.results.newBranch)"
            else
              echo "No changes to commit";
            fi
+      workspaces:
+        - name: source
+          workspace: internal-repo
+        - name: input
+          workspace: shared-data
+        - name: ssh-directory
+          workspace: ssh-creds
+      runAfter: 
+        - wildfly-glow-generate-provision
+    - name: build-server-image
+      taskRef:
+        name: buildah
+        kind: ClusterTask
+      when:
+      - input: "$(tasks.wildfly-glow-generate-provision.results.needBuildServerImage)"
+        operator: in
+        values: ["true"]
+      params:
+        - name: IMAGE
+          value: "$(tasks.wildfly-glow-generate-provision.results.serverImage)"
+        - name: DOCKERFILE
+          value: "$(tasks.wildfly-glow-generate-provision.results.serverDockerfile)"
+        - name: CONTEXT
+          value: "$(tasks.setup.results.contextDir)/$(tasks.wildfly-glow-generate-provision.results.provisioning)"
+        - name: TLSVERIFY
+          value: "false" 
+      runAfter: 
+        - wildfly-glow-generate-provision
+      workspaces:
+        - name: source
+          workspace: shared-data
+        - name: dockerconfig
+          workspace: dockerconfig
+    - name: build-app-image
+      taskRef:
+        name: buildah
+        kind: ClusterTask
+      when:
+      - input: "$(tasks.wildfly-glow-generate-provision.results.needBuildAppImage)"
+        operator: in
+        values: ["true"]
+      params:
+        - name: IMAGE
+          value: "$(tasks.wildfly-glow-generate-provision.results.appImage):$(tasks.git-create-branch-and-commit.results.commit)"
+        - name: DOCKERFILE
+          value: "$(tasks.wildfly-glow-generate-provision.results.appDockerfile)"
+        - name: CONTEXT
+          value: "$(tasks.setup.results.contextDir)/$(tasks.wildfly-glow-generate-provision.results.provisioning)"
+        - name: TLSVERIFY
+          value: "false"
+      runAfter: 
+        - build-server-image
+        - git-create-branch-and-commit
+      workspaces:
+        - name: source
+          workspace: shared-data
+        - name: dockerconfig
+          workspace: dockerconfig
+    - name: git-push
+      taskRef:
+        name: git-cli
+        kind: ClusterTask
+      params:
+        - name: GIT_USER_NAME
+          value: jfdenise
+        - name: GIT_USER_EMAIL
+          value: jfdenise@gmail.com
+        - name: GIT_SCRIPT
+          value: |
+           cd $(tasks.setup.results.contextDir) 
+           git config --global --add safe.directory /workspace/source/$(tasks.setup.results.contextDir)
+           git checkout "$(tasks.identify-branch.results.newBranch)"
+           git push origin "$(tasks.identify-branch.results.newBranch)"
       workspaces:
         - name: source
           workspace: internal-repo
