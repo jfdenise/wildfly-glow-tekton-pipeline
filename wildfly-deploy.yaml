@@ -15,18 +15,10 @@ spec:
         runAsUser: 0
       image: "image-registry.openshift-image-registry.svc:5000/openshift/cli:latest"
       env:
-        - name: RESOURCES_PATH
-          value: $(workspaces.sources.path)/$(params.contentLocation)/resources
+        - name: CONTENT_PATH
+          value: $(workspaces.sources.path)/$(params.contentLocation)
       script: |
-        deployersDir=$RESOURCES_PATH/deployers/
-        if [ -d "$deployersDir" ]; then
-          files=`ls $deployersDir/*.yaml`
-          for eachfile in $files
-          do
-            oc apply -f "$eachfile"
-          done
-        fi
-        files=`ls $RESOURCES_PATH/deployment/*.yaml`
+        files=`ls $CONTENT_PATH/openshift/*.yaml`
         for eachfile in $files
         do
           oc apply -f "$eachfile"

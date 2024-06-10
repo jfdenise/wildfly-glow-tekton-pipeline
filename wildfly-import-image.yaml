@@ -10,7 +10,11 @@ spec:
       description: application image tag
     - name: appName
       description: AppName used for the image stream
-      
+    - name: contextDir
+      description: Context dir
+  workspaces:
+    - name: current-repo
+      description: The current repo    
   steps:
     - name: import-image
       securityContext:
@@ -18,6 +22,6 @@ spec:
       image: "image-registry.openshift-image-registry.svc:5000/openshift/cli:latest"
       script: |
         echo "Importing Image $(params.appImage)"
-        oc import-image $(params.appName):$(params.tag) --from=$(params.appImage):$(params.tag) --confirm
+        oc create -f $(workspaces.current-repo.path)/$(params.contextDir)/openshift/$(params.appName)-image-stream.yaml
+        oc import-image $(params.appName):$(params.tag) --from=$(params.appImage):$(params.tag)
         oc tag $(params.appName):$(params.tag) $(params.appName):latest
-        oc set image-lookup $(params.appName)

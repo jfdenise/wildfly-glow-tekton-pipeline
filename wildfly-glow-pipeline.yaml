@@ -219,6 +219,9 @@ spec:
     - name: import-image
       taskRef:
         name: wildfly-import-image-task
+      workspaces:
+        - name: current-repo
+          workspace: internal-repo
       when:
       - input: "$(tasks.wildfly-glow-generate-provision.results.needBuildAppImage)"
         operator: in
@@ -230,6 +233,8 @@ spec:
           value: $(tasks.wildfly-glow-generate-provision.results.appImage)
         - name: tag
           value: $(tasks.git-create-branch-and-commit.results.commit)
+        - name: contextDir
+          value: "$(tasks.setup.results.contextDir)"
       runAfter: 
         - git-push
   finally:
