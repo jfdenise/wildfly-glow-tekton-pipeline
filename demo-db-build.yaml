@@ -24,6 +24,6 @@ spec:
     - name: gitUrl
       value: "http://github.com/jfdenise/my-db-app"
     - name: gitRevision
-      value: "main"
+      value: "branch1"
     - name: project
       value: "openshift-gitops"

@@ -67,7 +67,7 @@ spec:
         
         gitURI=$(params.gitUrl)
         newBranch=$(params.newBranch)
-        appName=${gitURI##*/}
+        appName=${gitURI##*/}-$(params.gitRevision)
         echo -n "$appName" > $(results.appName.path)
         
         appVersion=
@@ -262,6 +262,11 @@ spec:
               # Copy original docker file
             #  mkdir -p $WORKSPACE_SRC_PATH/internal-git-repo/docker/app
             #  cp $WORKSPACE_CURRENT_REPO_PATH/docker/app/Dockerfile $WORKSPACE_SRC_PATH/internal-git-repo/docker/app/Dockerfile
+            else
+              echo "app_version=$appVersion" >> "$WORKSPACE_SRC_PATH/internal-git-repo/app.properties"
+              echo -n "$appVersion" > $(results.appVersion.path)
+              echo "app_image=$appImage" >> "$WORKSPACE_SRC_PATH/internal-git-repo/app.properties"
+              echo -n "$appImage" > $(results.appImage.path)
             fi
             
             if [ $buildServerImage = "true" ]; then
