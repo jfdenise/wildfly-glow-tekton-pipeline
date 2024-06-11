@@ -95,10 +95,6 @@ spec:
       taskRef:
         name: git-cli
         kind: ClusterTask
-      when:
-      - input: "$(tasks.wildfly-glow-generate-provision.results.needBuildAppImage)"
-        operator: in
-        values: ["true"]
       params:
         - name: GIT_USER_NAME
           value: jfdenise
@@ -118,25 +114,25 @@ spec:
              git checkout -b "$(tasks.identify-branch.results.newBranch)"
            fi
            # Remove all
-           rm -rf ./*
-           if [ -d  ".s2i" ]; then
-             rm -rf .s2i
-           fi
+           #rm -rf ./*
+           #if [ -d  ".s2i" ]; then
+           #  rm -rf .s2i
+           #fi
            ls -al $(workspaces.input.path)/$(tasks.setup.results.contextDir)/$(tasks.wildfly-glow-generate-provision.results.contentLocation)/
            cp -r $(workspaces.input.path)/$(tasks.setup.results.contextDir)/$(tasks.wildfly-glow-generate-provision.results.contentLocation)/* .
-           if [ -d  "$(workspaces.input.path)/$(tasks.setup.results.contextDir)/$(tasks.wildfly-glow-generate-provision.results.contentLocation)/.s2i" ]; then
-             cp -rf $(workspaces.input.path)/$(tasks.setup.results.contextDir)/$(tasks.wildfly-glow-generate-provision.results.contentLocation)/.s2i .
-           fi
+           #if [ -d  "$(workspaces.input.path)/$(tasks.setup.results.contextDir)/$(tasks.wildfly-glow-generate-provision.results.contentLocation)/.s2i" ]; then
+           #  cp -rf $(workspaces.input.path)/$(tasks.setup.results.contextDir)/$(tasks.wildfly-glow-generate-provision.results.contentLocation)/.s2i .
+           #fi
            ls -al .
            git status
            if [ -n "$(git status --porcelain)" ]; then
              git add *
-             git add */.*
+             #git add */.*
              git commit -m "Commit from WildFly Glow pipeline"
-           else
-             currentCommit=`git rev-parse HEAD`
-             echo -n "$currentCommit" > $(results.commit.path)
-             echo "No changes to commit";
+           #else
+           #  currentCommit=`git rev-parse HEAD`
+           #  echo -n "$currentCommit" > $(results.commit.path)
+           #  echo "No changes to commit";
            fi
       workspaces:
         - name: source
@@ -181,7 +177,7 @@ spec:
         values: ["true"]
       params:
         - name: IMAGE
-          value: "$(tasks.wildfly-glow-generate-provision.results.appImage)-$(tasks.git-clone-user-repo.results.commit)"
+          value: "$(tasks.wildfly-glow-generate-provision.results.appImage)"
         - name: DOCKERFILE
           value: "$(tasks.wildfly-glow-generate-provision.results.appDockerfile)"
         - name: CONTEXT
@@ -221,9 +217,9 @@ spec:
         - build-app-image
         - git-create-branch-and-commit
       when:
-      - input: "$(tasks.wildfly-glow-generate-provision.results.needBuildAppImage)"
-        operator: in
-        values: ["true"]
+      - input: "$(tasks.git-create-branch-and-commit.results.commit)"
+        operator: notin
+        values: ["$(tasks.git-clone-internal-repo.results.commit)"]
     - name: import-image-add-argocd
       taskRef:
         name: wildfly-import-image-task
@@ -234,7 +230,7 @@ spec:
         - name: appName
           value: $(tasks.wildfly-glow-generate-provision.results.appName)
         - name: appImage
-          value: $(tasks.wildfly-glow-generate-provision.results.appImage)-$(tasks.git-clone-user-repo.results.commit)
+          value: $(tasks.wildfly-glow-generate-provision.results.appImage)
         - name: contextDir
           value: "$(tasks.setup.results.contextDir)"
         - name: project
