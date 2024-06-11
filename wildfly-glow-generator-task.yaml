@@ -64,6 +64,37 @@ spec:
         ls -l $srcDir
         echo "Internal repo content"
         ls -l $WORKSPACE_CURRENT_REPO_PATH
+        
+        gitURI=$(params.gitUrl)
+        newBranch=$(params.newBranch)
+        appName=${gitURI##*/}
+        echo -n "$appName" > $(results.appName.path)
+        appImage=quay.io/jdenise/pipeline-wildfly-app:$newBranch
+        echo -n "$appImage" > $(results.appImage.path)
+        
+        appVersion=
+        doNothing="false"
+        if [ -f "$WORKSPACE_CURRENT_REPO_PATH/app.properties" ]; then
+          while IFS="=" read -r key value; do
+            case "$key" in
+             "app_version") 
+               appVersion="$value" 
+               echo -n "$appVersion" > $(results.appVersion.path) ;;
+             "git_commit") 
+               currentCommit="$value" 
+               if [ "$currentCommit" = "$(params.gitCommit)" ]; then           
+                echo -n "false" > $(results.needBuildAppImage.path)
+                echo -n "false" > $(results.needBuildServerImage.path)
+                echo "No change in user repository."
+                doNothing="true"
+               fi
+               ;;
+            esac
+          done < "$WORKSPACE_CURRENT_REPO_PATH/app.properties"
+        fi
+        if [ "$doNothing" = "true" ]; then
+          exit 0
+        fi
         mkdir -p $WORKSPACE_SRC_PATH/internal-git-repo/deployments
         echo -n "internal-git-repo" > $(results.contentLocation.path)
         for eachfile in $files
@@ -83,10 +114,7 @@ spec:
             fi
           fi
         done
-        gitURI=$(params.gitUrl)
-        newBranch=$(params.newBranch)
-        appName=${gitURI##*/}
-        echo -n "$appName" > $(results.appName.path)
+        
         cat <<EOF > "$WORKSPACE_SRC_PATH/internal-git-repo/app.properties"
         git_url=$(params.gitUrl)
         git_revision=$(params.gitRevision)
@@ -94,17 +122,6 @@ spec:
         git_committer_date=$(params.gitCommitterDate)
         app_name=$appName
         EOF
-        
-        appVersion=
-        if [ -f "$WORKSPACE_CURRENT_REPO_PATH/app.properties" ]; then
-          while IFS="=" read -r key value; do
-            case "$key" in
-             "app_version") 
-               appVersion="$value" 
-               echo -n "$appVersion" > $(results.appVersion.path) ;;
-            esac
-          done < "$WORKSPACE_CURRENT_REPO_PATH/app.properties"
-        fi
         
         if [ -n "${deployment}" ]; then
             
@@ -147,7 +164,7 @@ spec:
             done < "$imageProperties"
 
             serverImage=quay.io/jdenise/pipeline-wildfly-server:$serverTag
-            appImage=quay.io/jdenise/pipeline-wildfly-app:$newBranch
+            
             echo "$serverTag serverHash" >> $WORKSPACE_SRC_PATH/internal-git-repo/app-checksum.chk
             echo "$appTag appHash" >> $WORKSPACE_SRC_PATH/internal-git-repo/app-checksum.chk
             echo "$serverTag serverHash" >> $WORKSPACE_SRC_PATH/internal-git-repo/server-checksum.chk
@@ -184,9 +201,7 @@ spec:
             echo -n "$buildServerImage" > $(results.needBuildServerImage.path)
             # provisioning directory is required for both server and app image
             echo -n "provisioning" > $(results.provisioning.path)
-            
-            # Required for task that expect to deal with the app image.
-            echo -n "$appImage" > $(results.appImage.path)
+
             if [ $buildAppImage = "true" ]; then
               echo "Must build a new app image"
               if [ -n "$appVersion" ]; then
