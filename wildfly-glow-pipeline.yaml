@@ -7,6 +7,8 @@ spec:
     - name: gitUrl
     - name: gitRevision
       default: ""
+    - name: project
+      default: ""
   workspaces:
     - name: shared-data
     - name: ssh-creds
@@ -46,7 +48,7 @@ spec:
         - name: subdirectory
           value: "$(tasks.setup.results.contextDir)"
       runAfter: 
-        - identify-branch
+        - setup
     - name: git-clone-internal-repo
       taskRef:
         name: git-clone
@@ -73,6 +75,10 @@ spec:
           value: "$(params.gitUrl)"
         - name: gitRevision
           value: "$(params.gitRevision)"
+        - name: gitCommit
+          value: "$(tasks.git-clone-user-repo.results.commit)"
+        - name: gitCommitterDate
+          value: "$(tasks.git-clone-user-repo.results.committer-date)"
         - name: contextDir
           value: "$(tasks.setup.results.contextDir)"
         - name: newBranch
@@ -128,6 +134,8 @@ spec:
              git add */.*
              git commit -m "Commit from WildFly Glow pipeline"
            else
+             currentCommit=`git rev-parse HEAD`
+             echo -n "$currentCommit" > $(results.commit.path)
              echo "No changes to commit";
            fi
       workspaces:
@@ -173,7 +181,7 @@ spec:
         values: ["true"]
       params:
         - name: IMAGE
-          value: "$(tasks.wildfly-glow-generate-provision.results.appImage):$(tasks.git-create-branch-and-commit.results.commit)"
+          value: "$(tasks.wildfly-glow-generate-provision.results.appImage)-$(tasks.git-clone-user-repo.results.commit)"
         - name: DOCKERFILE
           value: "$(tasks.wildfly-glow-generate-provision.results.appDockerfile)"
         - name: CONTEXT
@@ -182,7 +190,6 @@ spec:
           value: "false"
       runAfter: 
         - build-server-image
-        - git-create-branch-and-commit
       workspaces:
         - name: source
           workspace: shared-data
@@ -212,6 +219,7 @@ spec:
           workspace: ssh-creds
       runAfter: 
         - build-app-image
+        - git-create-branch-and-commit
       when:
       - input: "$(tasks.wildfly-glow-generate-provision.results.needBuildAppImage)"
         operator: in
@@ -222,19 +230,17 @@ spec:
       workspaces:
         - name: current-repo
           workspace: internal-repo
-      when:
-      - input: "$(tasks.wildfly-glow-generate-provision.results.needBuildAppImage)"
-        operator: in
-        values: ["true"]
       params:
         - name: appName
           value: $(tasks.wildfly-glow-generate-provision.results.appName)
         - name: appImage
-          value: $(tasks.wildfly-glow-generate-provision.results.appImage)
-        - name: tag
-          value: $(tasks.git-create-branch-and-commit.results.commit)
+          value: $(tasks.wildfly-glow-generate-provision.results.appImage)-$(tasks.git-clone-user-repo.results.commit)
         - name: contextDir
           value: "$(tasks.setup.results.contextDir)"
+        - name: project
+          value: "$(params.project)"
+        - name: streamTag
+          value: "$(tasks.wildfly-glow-generate-provision.results.appVersion)"
       runAfter: 
         - git-push
   finally:

@@ -9,6 +9,10 @@ spec:
    - name: gitRevision
      type: string
      default: ""
+   - name: gitCommit
+     type: string
+   - name: gitCommitterDate
+     type: string
    - name: contextDir
      type: string
    - name: newBranch
@@ -34,6 +38,8 @@ spec:
       description: where the docker file is located
     - name: appDockerfile
       description: where the docker file is located
+    - name: appVersion
+      description: version of the app
   workspaces:
     - name: sources
       description: The src dir
@@ -82,10 +88,24 @@ spec:
         appName=${gitURI##*/}
         echo -n "$appName" > $(results.appName.path)
         cat <<EOF > "$WORKSPACE_SRC_PATH/internal-git-repo/app.properties"
-        git_url:$(params.gitUrl)
-        git_revision:$(params.gitRevision)
-        app_name:$appName
+        git_url=$(params.gitUrl)
+        git_revision=$(params.gitRevision)
+        git_commit=$(params.gitCommit)
+        git_committer_date=$(params.gitCommitterDate)
+        app_name=$appName
         EOF
+        
+        appVersion=
+        if [ -f "$WORKSPACE_CURRENT_REPO_PATH/app.properties" ]; then
+          while IFS="=" read -r key value; do
+            case "$key" in
+             "app_version") 
+               appVersion="$value" 
+               echo -n "$appVersion" > $(results.appVersion.path) ;;
+            esac
+          done < "$WORKSPACE_CURRENT_REPO_PATH/app.properties"
+        fi
+        
         if [ -n "${deployment}" ]; then
             
             echo "Retrieving WildFly Glow"            
@@ -127,7 +147,7 @@ spec:
             done < "$imageProperties"
 
             serverImage=quay.io/jdenise/pipeline-wildfly-server:$serverTag
-            appImage=quay.io/jdenise/pipeline-wildfly-$appName
+            appImage=quay.io/jdenise/pipeline-wildfly-app:$newBranch
             echo "$serverTag serverHash" >> $WORKSPACE_SRC_PATH/internal-git-repo/app-checksum.chk
             echo "$appTag appHash" >> $WORKSPACE_SRC_PATH/internal-git-repo/app-checksum.chk
             echo "$serverTag serverHash" >> $WORKSPACE_SRC_PATH/internal-git-repo/server-checksum.chk
@@ -164,8 +184,18 @@ spec:
             echo -n "$buildServerImage" > $(results.needBuildServerImage.path)
             # provisioning directory is required for both server and app image
             echo -n "provisioning" > $(results.provisioning.path)
+            
+            # Required for task that expect to deal with the app image.
+            echo -n "$appImage" > $(results.appImage.path)
             if [ $buildAppImage = "true" ]; then
-              echo "Must build app image"
+              echo "Must build a new app image"
+              if [ -n "$appVersion" ]; then
+                appVersion="$(($appVersion + 1))"
+              else
+                appVersion="1"
+              fi
+              echo "app_version=$appVersion" >> "$WORKSPACE_SRC_PATH/internal-git-repo/app.properties"
+              echo -n "$appVersion" > $(results.appVersion.path)
               # copy deployments in docker context
               mkdir -p $WORKSPACE_SRC_PATH/provisioning
               cp -r "$WORKSPACE_SRC_PATH/scan-results/deployments" "$WORKSPACE_SRC_PATH/provisioning"
@@ -173,7 +203,7 @@ spec:
               if [ -d "$WORKSPACE_SRC_PATH/scan-results/extensions" ]; then
                 cp -r "$WORKSPACE_SRC_PATH/scan-results/extensions" "$WORKSPACE_SRC_PATH/provisioning"
               fi
-              echo -n "$appImage" > $(results.appImage.path)
+              
               # Copy Docker file
               mkdir -p "$WORKSPACE_SRC_PATH"/internal-git-repo/docker/app
               cp "$WORKSPACE_SRC_PATH"/scan-results/resources/docker/app/Dockerfile $WORKSPACE_SRC_PATH/internal-git-repo/docker/app

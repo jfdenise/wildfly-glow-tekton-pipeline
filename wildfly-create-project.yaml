@@ -1,0 +1,13 @@
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: wildfly-create-project-task
+spec: 
+  steps:
+    - name: create-project
+      securityContext:
+        runAsUser: 0
+      image: "image-registry.openshift-image-registry.svc:5000/openshift/cli:latest"
+      script: |
+          oc whoami
+          oc project openshift-gitops
