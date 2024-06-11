@@ -224,7 +224,7 @@ spec:
       - input: "$(tasks.wildfly-glow-generate-provision.results.needBuildAppImage)"
         operator: in
         values: ["true"]
-    - name: import-image
+    - name: import-image-add-argocd
       taskRef:
         name: wildfly-import-image-task
       workspaces:

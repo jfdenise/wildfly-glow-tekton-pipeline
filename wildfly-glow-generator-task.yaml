@@ -123,6 +123,27 @@ spec:
         app_name=$appName
         EOF
         
+        echo "apiVersion: argoproj.io/v1alpha1" > "$WORKSPACE_SRC_PATH/internal-git-repo/argocd.yaml"
+        echo "kind: Application" >> "$WORKSPACE_SRC_PATH/internal-git-repo/argocd.yaml"
+        echo "metadata:" >> "$WORKSPACE_SRC_PATH/internal-git-repo/argocd.yaml"
+        echo "  name: $appName" >> "$WORKSPACE_SRC_PATH/internal-git-repo/argocd.yaml"
+        echo "  namespace: openshift-gitops" >> "$WORKSPACE_SRC_PATH/internal-git-repo/argocd.yaml"
+        echo "spec:" >> "$WORKSPACE_SRC_PATH/internal-git-repo/argocd.yaml"
+        echo "  destination:" >> "$WORKSPACE_SRC_PATH/internal-git-repo/argocd.yaml"
+        echo "    namespace: openshift-gitops" >> "$WORKSPACE_SRC_PATH/internal-git-repo/argocd.yaml"
+        echo "    server: https://kubernetes.default.svc" >> "$WORKSPACE_SRC_PATH/internal-git-repo/argocd.yaml"
+        echo "  project: default" >> "$WORKSPACE_SRC_PATH/internal-git-repo/argocd.yaml"
+        echo "  source: " >> "$WORKSPACE_SRC_PATH/internal-git-repo/argocd.yaml"
+        echo "    path: openshift" >> "$WORKSPACE_SRC_PATH/internal-git-repo/argocd.yaml"
+        echo "    repoURL: https://github.com/jfdenise/go-to-openshift" >> "$WORKSPACE_SRC_PATH/internal-git-repo/argocd.yaml"
+        echo "    targetRevision: $newBranch" >> "$WORKSPACE_SRC_PATH/internal-git-repo/argocd.yaml"
+        echo "  syncPolicy: " >> "$WORKSPACE_SRC_PATH/internal-git-repo/argocd.yaml"
+        echo "    automated:" >> "$WORKSPACE_SRC_PATH/internal-git-repo/argocd.yaml"
+        echo "      prune: true" >> "$WORKSPACE_SRC_PATH/internal-git-repo/argocd.yaml"
+        echo "      selfHeal: false" >> "$WORKSPACE_SRC_PATH/internal-git-repo/argocd.yaml"
+        echo "    syncOptions:" >> "$WORKSPACE_SRC_PATH/internal-git-repo/argocd.yaml"
+        echo "    - CreateNamespace=false" >> "$WORKSPACE_SRC_PATH/internal-git-repo/argocd.yaml"
+        
         if [ -n "${deployment}" ]; then
             
             echo "Retrieving WildFly Glow"            
@@ -148,7 +169,7 @@ spec:
             ls -l "$WORKSPACE_SRC_PATH"/scan-results/resources/docker/server
             cp -r "$WORKSPACE_SRC_PATH/scan-results/galleon" "$WORKSPACE_SRC_PATH/internal-git-repo"
             # openshift resources
-            mkdir "$WORKSPACE_SRC_PATH/internal-git-repo/openshift"
+            mkdir -p "$WORKSPACE_SRC_PATH/internal-git-repo/openshift"
             cp "$WORKSPACE_SRC_PATH"/scan-results/resources/deployment/*.yaml "$WORKSPACE_SRC_PATH/internal-git-repo/openshift"
             cp "$WORKSPACE_SRC_PATH"/scan-results/resources/images/*.yaml "$WORKSPACE_SRC_PATH/internal-git-repo/openshift"
             if [ -d "$WORKSPACE_SRC_PATH/scan-results/resources/deployers" ]; then
