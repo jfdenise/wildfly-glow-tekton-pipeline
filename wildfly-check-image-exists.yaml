@@ -17,8 +17,10 @@ spec:
       script: |
         failure=
         skopeo inspect docker://$(params.image) || failure="true"
-        if [ -n $failure ]; then
+        if [ "$failure" = "true" ]; then
+          echo "The image $(params.image) doesn't exist."
           echo -n "false" > $(results.exists.path)
         else
+          echo "The image $(params.image) exists."
           echo -n "true" > $(results.exists.path)
         fi

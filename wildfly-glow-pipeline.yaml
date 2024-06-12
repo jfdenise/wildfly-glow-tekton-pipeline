@@ -104,6 +104,78 @@ spec:
       runAfter: 
         - git-clone-app-repo
         - git-clone-internal-repo
+    - name: check-server-image-exists
+      taskRef:
+        name: wildfly-check-image-exists-task
+      when:
+      - input: "$(tasks.wildfly-glow-generate-provision.results.needBuildServerImage)"
+        operator: in
+        values: ["true"]
+      params:
+        - name: image
+          value: "$(tasks.wildfly-glow-generate-provision.results.serverImage)"
+      runAfter: 
+        - wildfly-glow-generate-provision
+    - name: build-server-image
+      taskRef:
+        name: buildah
+        kind: ClusterTask
+      when:
+      - input: "$(tasks.check-server-image-exists.results.exists)"
+        operator: in
+        values: ["false"]
+      params:
+        - name: IMAGE
+          value: "$(tasks.wildfly-glow-generate-provision.results.serverImage)"
+        - name: DOCKERFILE
+          value: "$(tasks.wildfly-glow-generate-provision.results.serverDockerfile)"
+        - name: CONTEXT
+          value: "$(tasks.setup.results.contextDir)/$(tasks.wildfly-glow-generate-provision.results.provisioning)"
+        - name: TLSVERIFY
+          value: "false"
+      runAfter: 
+        - check-server-image-exists
+      workspaces:
+        - name: source
+          workspace: shared-data
+        - name: dockerconfig
+          workspace: dockerconfig
+    - name: check-app-image-exists
+      taskRef:
+        name: wildfly-check-image-exists-task
+      when:
+      - input: "$(tasks.wildfly-glow-generate-provision.results.needBuildAppImage)"
+        operator: in
+        values: ["true"]
+      params:
+        - name: image
+          value: "$(tasks.wildfly-glow-generate-provision.results.appImage)"
+      runAfter: 
+        - build-server-image
+    - name: build-app-image
+      taskRef:
+        name: buildah
+        kind: ClusterTask
+      when:
+      - input: "$(tasks.wildfly-glow-generate-provision.results.needBuildAppImage)"
+        operator: in
+        values: ["true"]
+      params:
+        - name: IMAGE
+          value: "$(tasks.wildfly-glow-generate-provision.results.appImage)"
+        - name: DOCKERFILE
+          value: "$(tasks.wildfly-glow-generate-provision.results.appDockerfile)"
+        - name: CONTEXT
+          value: "$(tasks.setup.results.contextDir)/$(tasks.wildfly-glow-generate-provision.results.provisioning)"
+        - name: TLSVERIFY
+          value: "false"
+      runAfter: 
+        - check-app-image-exists
+      workspaces:
+        - name: source
+          workspace: shared-data
+        - name: dockerconfig
+          workspace: dockerconfig
     - name: git-update-internal-repo-and-push
       taskRef:
         name: git-cli
@@ -161,69 +233,6 @@ spec:
           workspace: ssh-creds
       runAfter: 
         -  build-app-image
-    - name: check-server-image-exists
-      taskRef:
-        name: wildfly-check-image-exists-task
-      when:
-      - input: "$(tasks.wildfly-glow-generate-provision.results.needBuildServerImage)"
-        operator: in
-        values: ["true"]
-      params:
-        - name: image
-          value: "$(tasks.wildfly-glow-generate-provision.results.serverImage)"
-      runAfter: 
-        - wildfly-glow-generate-provision
-    - name: build-server-image
-      taskRef:
-        name: buildah
-        kind: ClusterTask
-      when:
-      - input: "$(tasks.wildfly-glow-generate-provision.results.needBuildServerImage)"
-        operator: in
-        values: ["true"]
-      - input: "$(tasks.check-server-image-exists.results.exists)"
-        operator: in
-        values: ["false"]
-      params:
-        - name: IMAGE
-          value: "$(tasks.wildfly-glow-generate-provision.results.serverImage)"
-        - name: DOCKERFILE
-          value: "$(tasks.wildfly-glow-generate-provision.results.serverDockerfile)"
-        - name: CONTEXT
-          value: "$(tasks.setup.results.contextDir)/$(tasks.wildfly-glow-generate-provision.results.provisioning)"
-        - name: TLSVERIFY
-          value: "false" 
-      runAfter: 
-        - check-server-image-exists
-      workspaces:
-        - name: source
-          workspace: shared-data
-        - name: dockerconfig
-          workspace: dockerconfig
-    - name: build-app-image
-      taskRef:
-        name: buildah
-        kind: ClusterTask
-      when:
-      - input: "$(tasks.wildfly-glow-generate-provision.results.needBuildAppImage)"
-        operator: in
-        values: ["true"]
-      params:
-        - name: IMAGE
-          value: "$(tasks.wildfly-glow-generate-provision.results.appImage)"
-        - name: DOCKERFILE
-          value: "$(tasks.wildfly-glow-generate-provision.results.appDockerfile)"
-        - name: CONTEXT
-          value: "$(tasks.setup.results.contextDir)/$(tasks.wildfly-glow-generate-provision.results.provisioning)"
-        - name: TLSVERIFY
-          value: "false"
-      runAfter: 
-        - build-server-image
-      workspaces:
-        - name: source
-          workspace: shared-data
-        - name: dockerconfig
-          workspace: dockerconfig
     - name: git-update-deployment-repo-and-push
       taskRef:
         name: git-cli
