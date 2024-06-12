@@ -189,11 +189,9 @@ spec:
             # openshift resources
             mkdir -p "$WORKSPACE_SRC_PATH/deployment-git-repo/resources"
             cp "$WORKSPACE_SRC_PATH"/scan-results/resources/deployment/*.yaml "$WORKSPACE_SRC_PATH/deployment-git-repo/resources"
-            cp "$WORKSPACE_SRC_PATH"/scan-results/resources/images/*.yaml "$WORKSPACE_SRC_PATH/deployment-git-repo/resources"
             if [ -d "$WORKSPACE_SRC_PATH/scan-results/resources/deployers" ]; then
               cp "$WORKSPACE_SRC_PATH"/scan-results/resources/deployers/*.yaml "$WORKSPACE_SRC_PATH/deployment-git-repo/resources"
             fi
-            
             imageProperties="$WORKSPACE_SRC_PATH"/scan-results/resources/images/images.properties
             while IFS="=" read -r key value; do
             case "$key" in
@@ -253,6 +251,8 @@ spec:
               appImage=quay.io/jdenise/pipeline-wildfly-app:$newBranch-$appVersion-$(params.gitCommit)
               echo "app_image=$appImage" >> "$WORKSPACE_SRC_PATH/internal-git-repo/app.properties"
               echo -n "$appImage" > $(results.appImage.path)
+              # Update the deployment TODO MUST BE BETTER
+              sed -i "s|$appName:latest|$appImage|" "$WORKSPACE_SRC_PATH/deployment-git-repo/resources/$appName-deployment.yaml"
               # copy deployments in docker context
               mkdir -p $WORKSPACE_SRC_PATH/provisioning
               cp -r "$WORKSPACE_SRC_PATH/scan-results/deployments" "$WORKSPACE_SRC_PATH/provisioning"

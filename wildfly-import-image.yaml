@@ -4,16 +4,10 @@ metadata:
   name: wildfly-import-image-task
 spec:
   params:
-    - name: appImage
-      description: application image
-    - name: appName
-      description: AppName used for the image stream
     - name: contextDir
       description: Context dir
     - name: project
       description: User project
-    - name: streamTag
-      description: image stream tag
   workspaces:
     - name: app-repo
       description: The app repo    
@@ -23,13 +17,17 @@ spec:
         runAsUser: 0
       image: "image-registry.openshift-image-registry.svc:5000/openshift/cli:latest"
       script: |
-        #if [ -n "$(params.project)" ]; then
-        #  oc new-project $(params.project) || oc project $(params.project)
-        #fi
-        oc project
-        echo "Importing Image $(params.appImage)"
-        oc apply -f $(workspaces.app-repo.path)/$(params.contextDir)/resources/$(params.appName)-image-stream.yaml
-        oc import-image $(params.appName):$(params.streamTag) --from=$(params.appImage)
-        oc tag $(params.appName):$(params.streamTag) $(params.appName):latest
+        if [ -n "$(params.project)" ]; then
+          oc new-project $(params.project) || oc project $(params.project)
+          oc project
+          oc apply -f $(workspaces.app-repo.path)/$(params.contextDir)/argocd.yaml
+          echo "ArgoCD application has been created"
+        else
+          files=`ls $(workspaces.app-repo.path)/$(params.contextDir)/resources/*.yaml`
+          for eachfile in $files
+          do
+            oc apply -f "$eachfile"
+          done
+          echo "Application has been deployed"
+        fi
         
-        oc apply -f $(workspaces.app-repo.path)/$(params.contextDir)/argocd.yaml

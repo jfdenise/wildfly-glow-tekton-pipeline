@@ -1,0 +1,24 @@
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: wildfly-check-image-exists-task
+spec:
+  params:
+      - name: image
+        type: string
+  results:
+    - name: exists
+      description: Does the image exists
+  steps:
+    - name: check-image
+      securityContext:
+        runAsUser: 0
+      image: "quay.io/skopeo/stable:v1"
+      script: |
+        failure=
+        skopeo inspect docker://$(params.image) || failure="true"
+        if [ -n $failure ]; then
+          echo -n "false" > $(results.exists.path)
+        else
+          echo -n "true" > $(results.exists.path)
+        fi

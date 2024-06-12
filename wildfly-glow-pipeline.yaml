@@ -148,6 +148,10 @@ spec:
            #  echo -n "$currentCommit" > $(results.commit.path)
            #  echo "No changes to commit";
            fi
+      when:
+      - input: "$(tasks.wildfly-glow-generate-provision.results.needBuildAppImage)"
+        operator: in
+        values: ["true"]
       workspaces:
         - name: source
           workspace: internal-repo
@@ -157,6 +161,18 @@ spec:
           workspace: ssh-creds
       runAfter: 
         -  build-app-image
+    - name: check-server-image-exists
+      taskRef:
+        name: wildfly-check-image-exists-task
+      when:
+      - input: "$(tasks.wildfly-glow-generate-provision.results.needBuildServerImage)"
+        operator: in
+        values: ["true"]
+      params:
+        - name: image
+          value: "$(tasks.wildfly-glow-generate-provision.results.serverImage)"
+      runAfter: 
+        - wildfly-glow-generate-provision
     - name: build-server-image
       taskRef:
         name: buildah
@@ -165,6 +181,9 @@ spec:
       - input: "$(tasks.wildfly-glow-generate-provision.results.needBuildServerImage)"
         operator: in
         values: ["true"]
+      - input: "$(tasks.check-server-image-exists.results.exists)"
+        operator: in
+        values: ["false"]
       params:
         - name: IMAGE
           value: "$(tasks.wildfly-glow-generate-provision.results.serverImage)"
@@ -175,7 +194,7 @@ spec:
         - name: TLSVERIFY
           value: "false" 
       runAfter: 
-        - wildfly-glow-generate-provision
+        - check-server-image-exists
       workspaces:
         - name: source
           workspace: shared-data
@@ -257,16 +276,10 @@ spec:
         - name: app-repo
           workspace: app-repo
       params:
-        - name: appName
-          value: $(tasks.wildfly-glow-generate-provision.results.appName)
-        - name: appImage
-          value: $(tasks.wildfly-glow-generate-provision.results.appImage)
         - name: contextDir
           value: "$(tasks.setup.results.contextDir)"
         - name: project
           value: "$(params.project)"
-        - name: streamTag
-          value: "$(tasks.wildfly-glow-generate-provision.results.appVersion)"
       runAfter: 
         - git-update-deployment-repo-and-push
   finally:

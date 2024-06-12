@@ -33,3 +33,5 @@ spec:
       value: "my-war"
     - name: gitRevision
       value: "main"
+    - name: project
+      value: "openshift-gitops"
