@@ -4,7 +4,7 @@ metadata:
   name: wildfly-glow-generator-task
 spec:
   params:
-   - name: gitUrl
+   - name: gitRepo
      type: string
    - name: gitRevision
      type: string
@@ -22,6 +22,8 @@ spec:
       description: The branch to create
     - name: contentLocation
       description: Where the generated content has been put
+    - name: deploymentLocation
+      description: Where the generated deployment content has been put
     - name: provisioning
       description: Where the server has been provisioned
     - name: appImage
@@ -43,8 +45,10 @@ spec:
   workspaces:
     - name: sources
       description: The src dir
+    - name: app-repo
+      description: The app repo
     - name: current-repo
-      description: The current repo
+      description: The current internal repo
   steps:
     - name: generate-provisioning
       securityContext:
@@ -53,19 +57,21 @@ spec:
       env:
         - name: WORKSPACE_SRC_PATH
           value: $(workspaces.sources.path)/$(params.contextDir)
+        - name: WORKSPACE_APP_REPO_PATH
+          value: $(workspaces.app-repo.path)/$(params.contextDir)
         - name: WORKSPACE_CURRENT_REPO_PATH
           value: $(workspaces.current-repo.path)/$(params.contextDir)
       script: |
         #!/usr/bin/env bash
         set -eu
-        srcDir="$WORKSPACE_SRC_PATH"
+        srcDir="$WORKSPACE_APP_REPO_PATH"
         files=`ls $srcDir/*.*`
         deployment=""
         ls -l $srcDir
         echo "Internal repo content"
         ls -l $WORKSPACE_CURRENT_REPO_PATH
         
-        gitURI=$(params.gitUrl)
+        gitURI=$(params.gitRepo)
         newBranch=$(params.newBranch)
         appName=${gitURI##*/}-$(params.gitRevision)
         echo -n "$appName" > $(results.appName.path)
@@ -96,6 +102,8 @@ spec:
         fi
         mkdir -p $WORKSPACE_SRC_PATH/internal-git-repo/deployments
         echo -n "internal-git-repo" > $(results.contentLocation.path)
+        echo -n "deployment-git-repo" > $(results.deploymentLocation.path)
+
         for eachfile in $files
         do
           #md5=($(md5sum "$eachfile"))
@@ -122,33 +130,34 @@ spec:
           exit 0
         fi
         cat <<EOF > "$WORKSPACE_SRC_PATH/internal-git-repo/app.properties"
-        git_url=$(params.gitUrl)
+        git_repo=$(params.gitRepo)
         git_revision=$(params.gitRevision)
         git_commit=$(params.gitCommit)
         git_committer_date=$(params.gitCommitterDate)
         app_name=$appName
         EOF
         
-        echo "apiVersion: argoproj.io/v1alpha1" > "$WORKSPACE_SRC_PATH/internal-git-repo/argocd.yaml"
-        echo "kind: Application" >> "$WORKSPACE_SRC_PATH/internal-git-repo/argocd.yaml"
-        echo "metadata:" >> "$WORKSPACE_SRC_PATH/internal-git-repo/argocd.yaml"
-        echo "  name: $appName" >> "$WORKSPACE_SRC_PATH/internal-git-repo/argocd.yaml"
-        echo "  namespace: openshift-gitops" >> "$WORKSPACE_SRC_PATH/internal-git-repo/argocd.yaml"
-        echo "spec:" >> "$WORKSPACE_SRC_PATH/internal-git-repo/argocd.yaml"
-        echo "  destination:" >> "$WORKSPACE_SRC_PATH/internal-git-repo/argocd.yaml"
-        echo "    namespace: openshift-gitops" >> "$WORKSPACE_SRC_PATH/internal-git-repo/argocd.yaml"
-        echo "    server: https://kubernetes.default.svc" >> "$WORKSPACE_SRC_PATH/internal-git-repo/argocd.yaml"
-        echo "  project: default" >> "$WORKSPACE_SRC_PATH/internal-git-repo/argocd.yaml"
-        echo "  source: " >> "$WORKSPACE_SRC_PATH/internal-git-repo/argocd.yaml"
-        echo "    path: openshift" >> "$WORKSPACE_SRC_PATH/internal-git-repo/argocd.yaml"
-        echo "    repoURL: https://github.com/jfdenise/go-to-openshift" >> "$WORKSPACE_SRC_PATH/internal-git-repo/argocd.yaml"
-        echo "    targetRevision: $newBranch" >> "$WORKSPACE_SRC_PATH/internal-git-repo/argocd.yaml"
-        echo "  syncPolicy: " >> "$WORKSPACE_SRC_PATH/internal-git-repo/argocd.yaml"
-        echo "    automated:" >> "$WORKSPACE_SRC_PATH/internal-git-repo/argocd.yaml"
-        echo "      prune: true" >> "$WORKSPACE_SRC_PATH/internal-git-repo/argocd.yaml"
-        echo "      selfHeal: false" >> "$WORKSPACE_SRC_PATH/internal-git-repo/argocd.yaml"
-        echo "    syncOptions:" >> "$WORKSPACE_SRC_PATH/internal-git-repo/argocd.yaml"
-        echo "    - CreateNamespace=false" >> "$WORKSPACE_SRC_PATH/internal-git-repo/argocd.yaml"
+        mkdir -p "$WORKSPACE_SRC_PATH/deployment-git-repo/resources"
+        echo "apiVersion: argoproj.io/v1alpha1" > "$WORKSPACE_SRC_PATH/deployment-git-repo/argocd.yaml"
+        echo "kind: Application" >> "$WORKSPACE_SRC_PATH/deployment-git-repo/argocd.yaml"
+        echo "metadata:" >> "$WORKSPACE_SRC_PATH/deployment-git-repo/argocd.yaml"
+        echo "  name: $appName" >> "$WORKSPACE_SRC_PATH/deployment-git-repo/argocd.yaml"
+        echo "  namespace: openshift-gitops" >> "$WORKSPACE_SRC_PATH/deployment-git-repo/argocd.yaml"
+        echo "spec:" >> "$WORKSPACE_SRC_PATH/deployment-git-repo/argocd.yaml"
+        echo "  destination:" >> "$WORKSPACE_SRC_PATH/deployment-git-repo/argocd.yaml"
+        echo "    namespace: openshift-gitops" >> "$WORKSPACE_SRC_PATH/deployment-git-repo/argocd.yaml"
+        echo "    server: https://kubernetes.default.svc" >> "$WORKSPACE_SRC_PATH/deployment-git-repo/argocd.yaml"
+        echo "  project: default" >> "$WORKSPACE_SRC_PATH/deployment-git-repo/argocd.yaml"
+        echo "  source: " >> "$WORKSPACE_SRC_PATH/deployment-git-repo/argocd.yaml"
+        echo "    path: resources" >> "$WORKSPACE_SRC_PATH/deployment-git-repo/argocd.yaml"
+        echo "    repoURL: http://$(params.gitRepo)" >> "$WORKSPACE_SRC_PATH/deployment-git-repo/argocd.yaml"
+        echo "    targetRevision: $(params.gitRevision)_deployment" >> "$WORKSPACE_SRC_PATH/deployment-git-repo/argocd.yaml"
+        echo "  syncPolicy: " >> "$WORKSPACE_SRC_PATH/deployment-git-repo/argocd.yaml"
+        echo "    automated:" >> "$WORKSPACE_SRC_PATH/deployment-git-repo/argocd.yaml"
+        echo "      prune: true" >> "$WORKSPACE_SRC_PATH/deployment-git-repo/argocd.yaml"
+        echo "      selfHeal: false" >> "$WORKSPACE_SRC_PATH/deployment-git-repo/argocd.yaml"
+        echo "    syncOptions:" >> "$WORKSPACE_SRC_PATH/deployment-git-repo/argocd.yaml"
+        echo "    - CreateNamespace=false" >> "$WORKSPACE_SRC_PATH/deployment-git-repo/argocd.yaml"
         
         if [ -n "${deployment}" ]; then
             
@@ -178,11 +187,11 @@ spec:
             ls -l "$WORKSPACE_SRC_PATH"/scan-results/resources/docker/server
             cp -r "$WORKSPACE_SRC_PATH/scan-results/galleon" "$WORKSPACE_SRC_PATH/internal-git-repo"
             # openshift resources
-            mkdir -p "$WORKSPACE_SRC_PATH/internal-git-repo/openshift"
-            cp "$WORKSPACE_SRC_PATH"/scan-results/resources/deployment/*.yaml "$WORKSPACE_SRC_PATH/internal-git-repo/openshift"
-            cp "$WORKSPACE_SRC_PATH"/scan-results/resources/images/*.yaml "$WORKSPACE_SRC_PATH/internal-git-repo/openshift"
+            mkdir -p "$WORKSPACE_SRC_PATH/deployment-git-repo/resources"
+            cp "$WORKSPACE_SRC_PATH"/scan-results/resources/deployment/*.yaml "$WORKSPACE_SRC_PATH/deployment-git-repo/resources"
+            cp "$WORKSPACE_SRC_PATH"/scan-results/resources/images/*.yaml "$WORKSPACE_SRC_PATH/deployment-git-repo/resources"
             if [ -d "$WORKSPACE_SRC_PATH/scan-results/resources/deployers" ]; then
-              cp "$WORKSPACE_SRC_PATH"/scan-results/resources/deployers/*.yaml "$WORKSPACE_SRC_PATH/internal-git-repo/openshift"
+              cp "$WORKSPACE_SRC_PATH"/scan-results/resources/deployers/*.yaml "$WORKSPACE_SRC_PATH/deployment-git-repo/resources"
             fi
             
             imageProperties="$WORKSPACE_SRC_PATH"/scan-results/resources/images/images.properties
@@ -241,7 +250,7 @@ spec:
               fi
               echo "app_version=$appVersion" >> "$WORKSPACE_SRC_PATH/internal-git-repo/app.properties"
               echo -n "$appVersion" > $(results.appVersion.path)
-              appImage=quay.io/jdenise/pipeline-wildfly-app:$newBranch-$(params.gitCommit)
+              appImage=quay.io/jdenise/pipeline-wildfly-app:$newBranch-$appVersion-$(params.gitCommit)
               echo "app_image=$appImage" >> "$WORKSPACE_SRC_PATH/internal-git-repo/app.properties"
               echo -n "$appImage" > $(results.appImage.path)
               # copy deployments in docker context

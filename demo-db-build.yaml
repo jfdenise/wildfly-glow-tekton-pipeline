@@ -21,8 +21,12 @@ spec:
   pipelineRef:
     name: wildfly-glow-pipeline
   params:
-    - name: gitUrl
-      value: "http://github.com/jfdenise/my-db-app"
+    - name: gitRepo
+      value: "github.com"
+    - name: gitRepoOwner
+      value: "jfdenise"
+    - name: gitRepoProject
+      value: "my-db-app"
     - name: gitRevision
       value: "branch1"
     - name: project

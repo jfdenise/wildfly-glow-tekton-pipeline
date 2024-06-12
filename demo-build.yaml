@@ -4,6 +4,10 @@ metadata:
   generateName: demo-build-
 spec:
   workspaces:
+  - name: app-repo
+    subPath: app-repo
+    persistentVolumeClaim:
+      claimName: glow-pipeline-data
   - name: shared-data
     subPath: sources
     persistentVolumeClaim:
@@ -21,8 +25,12 @@ spec:
   pipelineRef:
     name: wildfly-glow-pipeline
   params:
-    - name: gitUrl
-      value: "http://github.com/jfdenise/my-war"
+    - name: gitRepo
+      value: "github.com"
+    - name: gitRepoOwner
+      value: "jfdenise"
+    - name: gitRepoProject
+      value: "my-war"
     - name: gitRevision
       value: "main"
     - name: project

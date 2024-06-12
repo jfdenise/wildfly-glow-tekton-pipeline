@@ -15,21 +15,21 @@ spec:
     - name: streamTag
       description: image stream tag
   workspaces:
-    - name: current-repo
-      description: The current repo    
+    - name: app-repo
+      description: The app repo    
   steps:
     - name: import-image
       securityContext:
         runAsUser: 0
       image: "image-registry.openshift-image-registry.svc:5000/openshift/cli:latest"
       script: |
-        if [ -n "$(params.project)" ]; then
-          oc new-project $(params.project) || oc project $(params.project)
-        fi
+        #if [ -n "$(params.project)" ]; then
+        #  oc new-project $(params.project) || oc project $(params.project)
+        #fi
         oc project
         echo "Importing Image $(params.appImage)"
-        oc apply -f $(workspaces.current-repo.path)/$(params.contextDir)/openshift/$(params.appName)-image-stream.yaml
+        oc apply -f $(workspaces.app-repo.path)/$(params.contextDir)/resources/$(params.appName)-image-stream.yaml
         oc import-image $(params.appName):$(params.streamTag) --from=$(params.appImage)
         oc tag $(params.appName):$(params.streamTag) $(params.appName):latest
         
-        oc apply -f $(workspaces.current-repo.path)/$(params.contextDir)/argocd.yaml
+        oc apply -f $(workspaces.app-repo.path)/$(params.contextDir)/argocd.yaml

@@ -4,7 +4,11 @@ metadata:
   name: wildfly-identify-branch-task
 spec:
   params:
-    - name: gitUrl
+    - name: gitRepo
+      type: string
+    - name: gitRepoOwner
+      type: string
+    - name: gitRepoProject
       type: string
     - name: gitRevision
       type: string
@@ -19,9 +23,9 @@ spec:
         runAsUser: 0
       image: "redhat/ubi8"
       script: |
-        gitURI=$(params.gitUrl)
-        gitId=$(params.gitUrl)/revision/$(params.gitRevision)
-        newBranch=`tr -s :@#/ _ <<< "$gitId"`
+        gitURI=$(params.gitRepo)/$(params.gitRepoOwner)/$(params.gitRepoProject)
+        gitId=$gitURI/revision/$(params.gitRevision)
+        newBranch=`tr -s .:@#/ _ <<< "$gitId"`
         code=`curl -s -o /dev/null -w "%{http_code}" https://api.github.com/repos/jfdenise/go-to-openshift/branches/$newBranch`
         branchToPull="main"
         echo "curl return code $code"

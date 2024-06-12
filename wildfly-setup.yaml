@@ -12,6 +12,9 @@ spec:
     - name: internal-repo
       description: The pulled internal repo
       optional: true
+    - name: app-repo
+      description: The pulled app repo
+      optional: true
   steps:
     - name: create-context
       securityContext:
@@ -22,6 +25,8 @@ spec:
           value: $(workspaces.sources.path)
         - name: WORKSPACE_INTERNAL_REPO_PATH
           value: $(workspaces.internal-repo.path)
+        - name: WORKSPACE_APP_REPO_PATH
+          value: $(workspaces.app-repo.path)
       script: |
         dir=`uuidgen`
         echo "Creating context $WORKSPACE_SRC_PATH/$dir"
@@ -29,5 +34,9 @@ spec:
         if [ -d "$WORKSPACE_INTERNAL_REPO_PATH" ]; then
           echo "Creating context $WORKSPACE_INTERNAL_REPO_PATH/$dir"
           mkdir -p "$WORKSPACE_INTERNAL_REPO_PATH/$dir"
+        fi
+        if [ -d "$WORKSPACE_APP_REPO_PATH" ]; then
+          echo "Creating context $WORKSPACE_APP_REPO_PATH/$dir"
+          mkdir -p "$WORKSPACE_APP_REPO_PATH/$dir"
         fi
         echo -n "$dir" > $(results.contextDir.path)

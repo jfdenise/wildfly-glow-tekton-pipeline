@@ -4,7 +4,9 @@ metadata:
   name: wildfly-glow-pipeline
 spec:
   params:
-    - name: gitUrl
+    - name: gitRepo
+    - name: gitRepoOwner
+    - name: gitRepoProject
     - name: gitRevision
       default: ""
     - name: project
@@ -14,6 +16,7 @@ spec:
     - name: ssh-creds
     - name: internal-repo
     - name: dockerconfig
+    - name: app-repo
   tasks:
     - name: setup
       taskRef:
@@ -23,26 +26,34 @@ spec:
           workspace: shared-data
         - name: internal-repo
           workspace: internal-repo
-    - name: identify-branch
+        - name: app-repo
+          workspace: app-repo
+    - name: identify-internal-branch
       params:
-        - name: gitUrl
-          value: "$(params.gitUrl)"
+        - name: gitRepo
+          value: $(params.gitRepo)
+        - name: gitRepoOwner
+          value: $(params.gitRepoOwner)
+        - name: gitRepoProject
+          value: "$(params.gitRepoProject)"
         - name: gitRevision
           value: "$(params.gitRevision)"
       taskRef:
         name: wildfly-identify-branch-task
       runAfter: 
         - setup
-    - name: git-clone-user-repo
+    - name: git-clone-app-repo
       taskRef:
         name: git-clone
         kind: ClusterTask
       workspaces:
         - name: output
-          workspace: shared-data
+          workspace: app-repo
+        - name: ssh-directory
+          workspace: ssh-creds
       params:
         - name: url
-          value: "$(params.gitUrl)"
+          value: "git@$(params.gitRepo):$(params.gitRepoOwner)/$(params.gitRepoProject)"
         - name: revision
           value: "$(params.gitRevision)"
         - name: subdirectory
@@ -62,36 +73,38 @@ spec:
         - name: url
           value: "git@github.com:jfdenise/go-to-openshift"
         - name: revision
-          value: "$(tasks.identify-branch.results.branchToPull)"
+          value: "$(tasks.identify-internal-branch.results.branchToPull)"
         - name: subdirectory
           value: "$(tasks.setup.results.contextDir)"
       runAfter: 
-        - identify-branch
+        - identify-internal-branch
     - name: wildfly-glow-generate-provision
       taskRef:
         name: wildfly-glow-generator-task
       params:
-        - name: gitUrl
-          value: "$(params.gitUrl)"
+        - name: gitRepo
+          value: "$(params.gitRepo)/$(params.gitRepoOwner)/$(params.gitRepoProject)"
         - name: gitRevision
           value: "$(params.gitRevision)"
         - name: gitCommit
-          value: "$(tasks.git-clone-user-repo.results.commit)"
+          value: "$(tasks.git-clone-app-repo.results.commit)"
         - name: gitCommitterDate
-          value: "$(tasks.git-clone-user-repo.results.committer-date)"
+          value: "$(tasks.git-clone-app-repo.results.committer-date)"
         - name: contextDir
           value: "$(tasks.setup.results.contextDir)"
         - name: newBranch
-          value: "$(tasks.identify-branch.results.newBranch)"
+          value: "$(tasks.identify-internal-branch.results.newBranch)"
       workspaces:
         - name: sources
           workspace: shared-data
         - name: current-repo
           workspace: internal-repo
+        - name: app-repo
+          workspace: app-repo
       runAfter: 
-        - git-clone-user-repo
+        - git-clone-app-repo
         - git-clone-internal-repo
-    - name: git-create-branch-and-commit
+    - name: git-update-internal-repo-and-push
       taskRef:
         name: git-cli
         kind: ClusterTask
@@ -104,14 +117,14 @@ spec:
           value: |
            cd $(tasks.setup.results.contextDir) 
            git config --global --add safe.directory /workspace/source/$(tasks.setup.results.contextDir)
-           rev=$(tasks.identify-branch.results.newBranch)
+           rev=$(tasks.identify-internal-branch.results.newBranch)
            exists=`git ls-remote --heads git@github.com:jfdenise/go-to-openshift "refs/heads/${rev}" | wc -l`
            if [ "${exists}" = "1" ]; then
              echo "A branch already exists"
-             git fetch origin "$(tasks.identify-branch.results.newBranch)"
-             git checkout "$(tasks.identify-branch.results.newBranch)"
+             git fetch origin "$(tasks.identify-internal-branch.results.newBranch)"
+             git checkout "$(tasks.identify-internal-branch.results.newBranch)"
            else
-             git checkout -b "$(tasks.identify-branch.results.newBranch)"
+             git checkout -b "$(tasks.identify-internal-branch.results.newBranch)"
            fi
            # Remove all
            #rm -rf ./*
@@ -129,6 +142,7 @@ spec:
              git add *
              #git add */.*
              git commit -m "Commit from WildFly Glow pipeline"
+             git push origin "$(tasks.identify-internal-branch.results.newBranch)"
            #else
            #  currentCommit=`git rev-parse HEAD`
            #  echo -n "$currentCommit" > $(results.commit.path)
@@ -142,7 +156,7 @@ spec:
         - name: ssh-directory
           workspace: ssh-creds
       runAfter: 
-        - wildfly-glow-generate-provision
+        -  build-app-image
     - name: build-server-image
       taskRef:
         name: buildah
@@ -191,7 +205,7 @@ spec:
           workspace: shared-data
         - name: dockerconfig
           workspace: dockerconfig
-    - name: git-push
+    - name: git-update-deployment-repo-and-push
       taskRef:
         name: git-cli
         kind: ClusterTask
@@ -204,28 +218,44 @@ spec:
           value: |
            cd $(tasks.setup.results.contextDir) 
            git config --global --add safe.directory /workspace/source/$(tasks.setup.results.contextDir)
-           git checkout "$(tasks.identify-branch.results.newBranch)"
-           git push origin "$(tasks.identify-branch.results.newBranch)"
+           rev=$(params.gitRevision)_deployment
+           exists=`git ls-remote --heads git@$(params.gitRepo):$(params.gitRepoOwner)/$(params.gitRepoProject) "refs/heads/${rev}" | wc -l`
+           if [ "${exists}" = "1" ]; then
+             echo "A branch already exists"
+             git fetch origin "$rev"
+             git checkout "$rev"
+           else
+             # Reset content
+             rm -rf ./*
+             git add *
+             git commit -m "Commit from WildFly Glow pipeline, reset branch content"
+             git checkout -b "$rev"
+           fi
+           if [ -d "$(workspaces.input.path)/$(tasks.setup.results.contextDir)/$(tasks.wildfly-glow-generate-provision.results.deploymentLocation)" ]; then
+             cp -r $(workspaces.input.path)/$(tasks.setup.results.contextDir)/$(tasks.wildfly-glow-generate-provision.results.deploymentLocation)/* .
+             ls -al .
+             git status
+             if [ -n "$(git status --porcelain)" ]; then
+               git add *
+               git commit -m "Commit from WildFly Glow pipeline, deployment resources"
+               git push origin "$rev"
+             fi
+           fi
       workspaces:
         - name: source
-          workspace: internal-repo
+          workspace: app-repo
         - name: input
           workspace: shared-data
         - name: ssh-directory
           workspace: ssh-creds
       runAfter: 
         - build-app-image
-        - git-create-branch-and-commit
-      when:
-      - input: "$(tasks.git-create-branch-and-commit.results.commit)"
-        operator: notin
-        values: ["$(tasks.git-clone-internal-repo.results.commit)"]
     - name: import-image-add-argocd
       taskRef:
         name: wildfly-import-image-task
       workspaces:
-        - name: current-repo
-          workspace: internal-repo
+        - name: app-repo
+          workspace: app-repo
       params:
         - name: appName
           value: $(tasks.wildfly-glow-generate-provision.results.appName)
@@ -238,7 +268,7 @@ spec:
         - name: streamTag
           value: "$(tasks.wildfly-glow-generate-provision.results.appVersion)"
       runAfter: 
-        - git-push
+        - git-update-deployment-repo-and-push
   finally:
     - name: cleanup
       taskRef:
@@ -251,4 +281,6 @@ spec:
           workspace: shared-data
         - name: internal-repo
           workspace: internal-repo
+        - name: app-repo
+          workspace: app-repo
 
