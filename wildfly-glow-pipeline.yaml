@@ -28,6 +28,8 @@ spec:
           workspace: internal-repo
         - name: app-repo
           workspace: app-repo
+    # This one is only needed in the POC
+    # In real service, the new branch would be setup and passed as parameters to the pipeline
     - name: identify-internal-branch
       params:
         - name: gitRepo
