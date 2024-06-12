@@ -78,7 +78,7 @@ spec:
           value: "$(tasks.setup.results.contextDir)"
       runAfter: 
         - identify-internal-branch
-    - name: wildfly-glow-generate-provision
+    - name: wildfly-glow-generate
       taskRef:
         name: wildfly-glow-generator-task
       params:
@@ -107,15 +107,33 @@ spec:
     - name: check-server-image-exists
       taskRef:
         name: wildfly-check-image-exists-task
-      when:
-      - input: "$(tasks.wildfly-glow-generate-provision.results.needBuildServerImage)"
-        operator: in
-        values: ["true"]
+     # If we enable this condition, and we don't need to build a server image, all following tasks are not executed. Bug in Tekton?'
+     # when:
+     # - input: "$(tasks.wildfly-glow-generate.results.needBuildServerImage)"
+     #   operator: in
+     #   values: ["true"]
       params:
         - name: image
-          value: "$(tasks.wildfly-glow-generate-provision.results.serverImage)"
+          value: "$(tasks.wildfly-glow-generate.results.serverImage)"
       runAfter: 
-        - wildfly-glow-generate-provision
+        - wildfly-glow-generate
+    - name: wildfly-provision
+      taskRef:
+        name: wildfly-provision-task
+      when:
+      - input: "$(tasks.check-server-image-exists.results.exists)"
+        operator: in
+        values: ["false"]
+      params:
+        - name: contextDir
+          value: "$(tasks.setup.results.contextDir)"
+      workspaces:
+        - name: sources
+          workspace: shared-data
+        - name: app-repo
+          workspace: app-repo
+      runAfter: 
+        - check-server-image-exists
     - name: build-server-image
       taskRef:
         name: buildah
@@ -126,15 +144,15 @@ spec:
         values: ["false"]
       params:
         - name: IMAGE
-          value: "$(tasks.wildfly-glow-generate-provision.results.serverImage)"
+          value: "$(tasks.wildfly-glow-generate.results.serverImage)"
         - name: DOCKERFILE
-          value: "$(tasks.wildfly-glow-generate-provision.results.serverDockerfile)"
+          value: "$(tasks.wildfly-glow-generate.results.serverDockerfile)"
         - name: CONTEXT
-          value: "$(tasks.setup.results.contextDir)/$(tasks.wildfly-glow-generate-provision.results.provisioning)"
+          value: "$(tasks.setup.results.contextDir)/$(tasks.wildfly-glow-generate.results.dockerContext)"
         - name: TLSVERIFY
           value: "false"
       runAfter: 
-        - check-server-image-exists
+        - wildfly-provision
       workspaces:
         - name: source
           workspace: shared-data
@@ -144,12 +162,12 @@ spec:
       taskRef:
         name: wildfly-check-image-exists-task
       when:
-      - input: "$(tasks.wildfly-glow-generate-provision.results.needBuildAppImage)"
+      - input: "$(tasks.wildfly-glow-generate.results.needBuildAppImage)"
         operator: in
         values: ["true"]
       params:
         - name: image
-          value: "$(tasks.wildfly-glow-generate-provision.results.appImage)"
+          value: "$(tasks.wildfly-glow-generate.results.appImage)"
       runAfter: 
         - build-server-image
     - name: build-app-image
@@ -157,16 +175,16 @@ spec:
         name: buildah
         kind: ClusterTask
       when:
-      - input: "$(tasks.wildfly-glow-generate-provision.results.needBuildAppImage)"
+      - input: "$(tasks.wildfly-glow-generate.results.needBuildAppImage)"
         operator: in
         values: ["true"]
       params:
         - name: IMAGE
-          value: "$(tasks.wildfly-glow-generate-provision.results.appImage)"
+          value: "$(tasks.wildfly-glow-generate.results.appImage)"
         - name: DOCKERFILE
-          value: "$(tasks.wildfly-glow-generate-provision.results.appDockerfile)"
+          value: "$(tasks.wildfly-glow-generate.results.appDockerfile)"
         - name: CONTEXT
-          value: "$(tasks.setup.results.contextDir)/$(tasks.wildfly-glow-generate-provision.results.provisioning)"
+          value: "$(tasks.setup.results.contextDir)/$(tasks.wildfly-glow-generate.results.dockerContext)"
         - name: TLSVERIFY
           value: "false"
       runAfter: 
@@ -198,30 +216,17 @@ spec:
            else
              git checkout -b "$(tasks.identify-internal-branch.results.newBranch)"
            fi
-           # Remove all
-           #rm -rf ./*
-           #if [ -d  ".s2i" ]; then
-           #  rm -rf .s2i
-           #fi
-           ls -al $(workspaces.input.path)/$(tasks.setup.results.contextDir)/$(tasks.wildfly-glow-generate-provision.results.contentLocation)/
-           cp -r $(workspaces.input.path)/$(tasks.setup.results.contextDir)/$(tasks.wildfly-glow-generate-provision.results.contentLocation)/* .
-           #if [ -d  "$(workspaces.input.path)/$(tasks.setup.results.contextDir)/$(tasks.wildfly-glow-generate-provision.results.contentLocation)/.s2i" ]; then
-           #  cp -rf $(workspaces.input.path)/$(tasks.setup.results.contextDir)/$(tasks.wildfly-glow-generate-provision.results.contentLocation)/.s2i .
-           #fi
+           ls -al $(workspaces.input.path)/$(tasks.setup.results.contextDir)/$(tasks.wildfly-glow-generate.results.contentLocation)/
+           cp -r $(workspaces.input.path)/$(tasks.setup.results.contextDir)/$(tasks.wildfly-glow-generate.results.contentLocation)/* .
            ls -al .
            git status
            if [ -n "$(git status --porcelain)" ]; then
              git add *
-             #git add */.*
              git commit -m "Commit from WildFly Glow pipeline"
              git push origin "$(tasks.identify-internal-branch.results.newBranch)"
-           #else
-           #  currentCommit=`git rev-parse HEAD`
-           #  echo -n "$currentCommit" > $(results.commit.path)
-           #  echo "No changes to commit";
            fi
       when:
-      - input: "$(tasks.wildfly-glow-generate-provision.results.needBuildAppImage)"
+      - input: "$(tasks.wildfly-glow-generate.results.needBuildAppImage)"
         operator: in
         values: ["true"]
       workspaces:
@@ -259,8 +264,8 @@ spec:
              git commit -m "Commit from WildFly Glow pipeline, reset branch content"
              git checkout -b "$rev"
            fi
-           if [ -d "$(workspaces.input.path)/$(tasks.setup.results.contextDir)/$(tasks.wildfly-glow-generate-provision.results.deploymentLocation)" ]; then
-             cp -r $(workspaces.input.path)/$(tasks.setup.results.contextDir)/$(tasks.wildfly-glow-generate-provision.results.deploymentLocation)/* .
+           if [ -d "$(workspaces.input.path)/$(tasks.setup.results.contextDir)/$(tasks.wildfly-glow-generate.results.deploymentLocation)" ]; then
+             cp -r $(workspaces.input.path)/$(tasks.setup.results.contextDir)/$(tasks.wildfly-glow-generate.results.deploymentLocation)/* .
              ls -al .
              git status
              if [ -n "$(git status --porcelain)" ]; then

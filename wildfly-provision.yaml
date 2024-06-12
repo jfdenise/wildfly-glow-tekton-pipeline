@@ -1,0 +1,57 @@
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: wildfly-provision-task
+spec:
+  params:
+   - name: contextDir
+     type: string
+  workspaces:
+    - name: sources
+      description: The src dir
+    - name: app-repo
+      description: The app repo
+  steps:
+    - name: provision
+      securityContext:
+        runAsUser: 0
+      image: "quay.io/wildfly/wildfly-runtime:latest"
+      env:
+        - name: WORKSPACE_SRC_PATH
+          value: $(workspaces.sources.path)/$(params.contextDir)
+        - name: WORKSPACE_APP_REPO_PATH
+          value: $(workspaces.app-repo.path)/$(params.contextDir)
+      script: |
+        #!/usr/bin/env bash
+        set -eu
+        srcDir="$WORKSPACE_APP_REPO_PATH"
+        files=`ls $srcDir/*.*`
+        deployment=""
+        for eachfile in $files
+        do
+          if [[ $eachfile =~ .*.war ]] || [[ $eachfile =~ .*.jar ]] || [[ $eachfile =~ .*.ear ]]; then
+            deployment="$deployment $eachfile"
+          fi
+        done
+        
+        if [ -n "${deployment}" ]; then
+            echo "Retrieving WildFly Glow to provision"            
+            curl --insecure https://repository.jboss.org/nexus/content/repositories/snapshots/org/wildfly/glow/wildfly-glow/1.0.7.Final-SNAPSHOT/wildfly-glow-1.0.7.Final-20240610.114222-13.zip -LO
+            unzip wildfly-glow*.zip -d .
+            glowDir=`find $PWD -type d -iname "wildfly-glow*"`
+            configFile=
+            if [ -f "$srcDir/glow.properties" ]; then
+              configFile="--config-file=$srcDir/glow.properties"
+            fi
+            # provision server
+            $glowDir/wildfly-glow scan $deployment --cloud --provision server --output-dir "$WORKSPACE_SRC_PATH/provisioning/server" $configFile
+            rm $WORKSPACE_SRC_PATH/provisioning/server/standalone/deployments/*.*
+            # Copy Docker file
+            mkdir -p "$WORKSPACE_SRC_PATH"/internal-git-repo/docker/server
+            cp "$WORKSPACE_SRC_PATH"/scan-results/resources/docker/server/Dockerfile $WORKSPACE_SRC_PATH/internal-git-repo/docker/server
+            mkdir -p $WORKSPACE_SRC_PATH/provisioning/docker/server
+            cp $WORKSPACE_SRC_PATH/internal-git-repo/docker/server/Dockerfile $WORKSPACE_SRC_PATH/provisioning/docker/server
+        else
+            echo "No deployment to scan!"
+            exit 1
+        fi

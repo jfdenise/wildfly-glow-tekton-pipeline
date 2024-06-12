@@ -18,14 +18,12 @@ spec:
    - name: newBranch
      type: string
   results:
-    - name: gitRevision
-      description: The branch to create
     - name: contentLocation
       description: Where the generated content has been put
     - name: deploymentLocation
       description: Where the generated deployment content has been put
-    - name: provisioning
-      description: Where the server has been provisioned
+    - name: dockerContext
+      description: The docker context
     - name: appImage
       description: Application image
     - name: appName
@@ -48,7 +46,7 @@ spec:
     - name: current-repo
       description: The current internal repo
   steps:
-    - name: generate-provisioning
+    - name: scan
       securityContext:
         runAsUser: 0
       image: "quay.io/wildfly/wildfly-runtime:latest"
@@ -100,17 +98,21 @@ spec:
         mkdir -p $WORKSPACE_SRC_PATH/internal-git-repo/deployments
         echo -n "internal-git-repo" > $(results.contentLocation.path)
         echo -n "deployment-git-repo" > $(results.deploymentLocation.path)
-
+        echo -n "docker/app/Dockerfile" > $(results.appDockerfile.path)
+        echo -n "docker/server/Dockerfile" > $(results.serverDockerfile.path)
+        # provisioning directory is required for both server and app image
+        echo -n "provisioning" > $(results.dockerContext.path)
+        if [ "$doNothing" = "true" ]; then
+          echo -n "false" > $(results.needBuildAppImage.path)
+          echo -n "false" > $(results.needBuildServerImage.path)
+          exit 0
+        fi
         for eachfile in $files
         do
-          fileName=$(basename $eachfile)
           if [[ $eachfile =~ .*.war ]] || [[ $eachfile =~ .*.jar ]] || [[ $eachfile =~ .*.ear ]]; then
             deployment="$deployment $eachfile"
           fi
         done
-        if [ "$doNothing" = "true" ]; then
-          exit 0
-        fi
         cat <<EOF > "$WORKSPACE_SRC_PATH/internal-git-repo/app.properties"
         git_repo=$(params.gitRepo)
         git_revision=$(params.gitRevision)
@@ -142,7 +144,6 @@ spec:
         echo "    - CreateNamespace=false" >> "$WORKSPACE_SRC_PATH/deployment-git-repo/argocd.yaml"
         
         if [ -n "${deployment}" ]; then
-            
             echo "Retrieving WildFly Glow"            
             curl --insecure https://repository.jboss.org/nexus/content/repositories/snapshots/org/wildfly/glow/wildfly-glow/1.0.7.Final-SNAPSHOT/wildfly-glow-1.0.7.Final-20240610.114222-13.zip -LO
             unzip wildfly-glow*.zip -d .
@@ -183,7 +184,7 @@ spec:
             done < "$imageProperties"
 
             serverImage=quay.io/jdenise/pipeline-wildfly-server:$serverTag
-            
+            echo -n "$serverImage" > $(results.serverImage.path)
             echo "$serverTag serverHash" >> $WORKSPACE_SRC_PATH/internal-git-repo/app-checksum.chk
             echo "$appTag appHash" >> $WORKSPACE_SRC_PATH/internal-git-repo/app-checksum.chk
             echo "$serverTag serverHash" >> $WORKSPACE_SRC_PATH/internal-git-repo/server-checksum.chk
@@ -202,6 +203,7 @@ spec:
                buildServerImage="false"
               fi
             fi
+            echo -n "$buildServerImage" > $(results.needBuildServerImage.path)
             # We need to build the app image if no checksum file exists or is different
             buildAppImage="true"
             if [ -f "$WORKSPACE_CURRENT_REPO_PATH/app-checksum.chk" ]; then
@@ -217,10 +219,6 @@ spec:
               fi
             fi
             echo -n "$buildAppImage" > $(results.needBuildAppImage.path)
-            echo -n "$buildServerImage" > $(results.needBuildServerImage.path)
-            # provisioning directory is required for both server and app image
-            echo -n "provisioning" > $(results.provisioning.path)
-
             if [ $buildAppImage = "true" ]; then
               echo "Must build a new app image"
               if [ -n "$appVersion" ]; then
@@ -247,25 +245,10 @@ spec:
               cp "$WORKSPACE_SRC_PATH"/scan-results/resources/docker/app/Dockerfile $WORKSPACE_SRC_PATH/internal-git-repo/docker/app
               mkdir -p $WORKSPACE_SRC_PATH/provisioning/docker/app
               cp $WORKSPACE_SRC_PATH/internal-git-repo/docker/app/Dockerfile "$WORKSPACE_SRC_PATH/provisioning/docker/app"
-              echo -n "docker/app/Dockerfile" > $(results.appDockerfile.path)
             else
               echo "app_version=$appVersion" >> "$WORKSPACE_SRC_PATH/internal-git-repo/app.properties"
               echo "app_image=$appImage" >> "$WORKSPACE_SRC_PATH/internal-git-repo/app.properties"
               echo -n "$appImage" > $(results.appImage.path)
-            fi
-            
-            if [ $buildServerImage = "true" ]; then
-              echo "Must build server image"
-              # provision server
-              $glowDir/wildfly-glow scan $deployment --cloud --provision server --output-dir "$WORKSPACE_SRC_PATH/provisioning/server" $configFile
-              echo -n "$serverImage" > $(results.serverImage.path)
-              
-              # Copy Docker file
-              mkdir -p "$WORKSPACE_SRC_PATH"/internal-git-repo/docker/server
-              cp "$WORKSPACE_SRC_PATH"/scan-results/resources/docker/server/Dockerfile $WORKSPACE_SRC_PATH/internal-git-repo/docker/server
-              mkdir -p $WORKSPACE_SRC_PATH/provisioning/docker/server
-              cp $WORKSPACE_SRC_PATH/internal-git-repo/docker/server/Dockerfile $WORKSPACE_SRC_PATH/provisioning/docker/server
-              echo -n "docker/server/Dockerfile" > $(results.serverDockerfile.path)
             fi
             ls -al $WORKSPACE_SRC_PATH/internal-git-repo
         else

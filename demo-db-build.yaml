@@ -4,6 +4,10 @@ metadata:
   generateName: demo-db-build-
 spec:
   workspaces:
+  - name: app-repo
+    subPath: app-repo
+    persistentVolumeClaim:
+      claimName: glow-pipeline-data
   - name: shared-data
     subPath: sources
     persistentVolumeClaim:
@@ -28,6 +32,4 @@ spec:
     - name: gitRepoProject
       value: "my-db-app"
     - name: gitRevision
-      value: "branch1"
-    - name: project
-      value: "openshift-gitops"
+      value: "main"
