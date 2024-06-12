@@ -269,9 +269,9 @@ spec:
           workspace: ssh-creds
       runAfter: 
         - build-app-image
-    - name: import-image-add-argocd
+    - name: deploy
       taskRef:
-        name: wildfly-import-image-task
+        name: wildfly-deploy-task
       workspaces:
         - name: app-repo
           workspace: app-repo

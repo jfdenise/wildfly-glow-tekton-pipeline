@@ -12,10 +12,11 @@ oc create secret generic my-ssh-credentials --from-file=known_hosts=/home/jdenis
 * oc new-project eap-service
 
 * oc apply -f of all task/pipeline
-oc apply -f identify-branch.yaml
+oc apply -f wildfly-check-image-exists.yaml
 oc apply -f wildfly-cleanup.yaml
 oc apply -f wildfly-glow-generator-task.yaml
 oc apply -f wildfly-glow-pipeline.yaml
+oc apply -f wildfly-identify-branch.yaml
 oc apply -f wildfly-import-image.yaml
 oc apply -f wildfly-setup.yaml
 

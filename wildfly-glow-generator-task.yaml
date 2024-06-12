@@ -40,8 +40,6 @@ spec:
       description: where the docker file is located
     - name: appDockerfile
       description: where the docker file is located
-    - name: appVersion
-      description: version of the app
   workspaces:
     - name: sources
       description: The src dir
@@ -83,8 +81,7 @@ spec:
           while IFS="=" read -r key value; do
             case "$key" in
              "app_version") 
-               appVersion="$value" 
-               echo -n "$appVersion" > $(results.appVersion.path) ;;
+               appVersion="$value" ;;
              "git_commit") 
                currentCommit="$value" 
                if [ "$currentCommit" = "$(params.gitCommit)" ]; then           
@@ -106,24 +103,9 @@ spec:
 
         for eachfile in $files
         do
-          #md5=($(md5sum "$eachfile"))
           fileName=$(basename $eachfile)
           if [[ $eachfile =~ .*.war ]] || [[ $eachfile =~ .*.jar ]] || [[ $eachfile =~ .*.ear ]]; then
             deployment="$deployment $eachfile"
-            #cp $eachfile $WORKSPACE_SRC_PATH/internal-git-repo/deployments
-            #echo "$md5 $fileName" >> $WORKSPACE_SRC_PATH/internal-git-repo/app-checksum.chk
-          #else
-          #  if [[ !  $eachfile =~ .*.chk ]]; then
-          #    cp $eachfile $WORKSPACE_SRC_PATH/internal-git-repo
-             # if [ !  $eachfile = "glow.properties" ]; then
-             #   echo "$md5 $fileName" >> $WORKSPACE_SRC_PATH/internal-git-repo/app-checksum.chk
-             # fi
-          #  else
-              # If we do nothing, we need to have all files in the internal repo
-          #    if [ "$doNothing" = "true" ]; then
-          #      cp $eachfile $WORKSPACE_SRC_PATH/internal-git-repo
-          #    fi
-          #  fi
           fi
         done
         if [ "$doNothing" = "true" ]; then
@@ -182,7 +164,7 @@ spec:
               envFile="--env-file=$srcDir/vars.env"
             fi
             # generate provisioning and openshift resources
-            $glowDir/wildfly-glow scan $deployment --cloud --provision openshift_resources --output-dir "$WORKSPACE_SRC_PATH/scan-results" --properties="-Dorg.wildfly.glow.openshift.git.uri=https://github.com/jfdenise/go-to-openshift -Dorg.wildfly.glow.openshift.git.ref=$newBranch -Dorg.wildfly.glow.openshift.app.name=$appName -Dorg.wildfly.glow.openshift.server.image=quay.io/jdenise/pipeline-wildfly-server" $configFile $cliScript $bashScript $envFile
+            $glowDir/wildfly-glow scan $deployment --cloud --provision openshift_resources --output-dir "$WORKSPACE_SRC_PATH/scan-results" --properties="-Dorg.wildfly.glow.openshift.git.uri=https://github.com/jfdenise/go-to-openshift -Dorg.wildfly.glow.openshift.app.name=$appName -Dorg.wildfly.glow.openshift.server.image=quay.io/jdenise/pipeline-wildfly-server" $configFile $cliScript $bashScript $envFile
             ls -l "$WORKSPACE_SRC_PATH"/scan-results/resources/docker/app
             ls -l "$WORKSPACE_SRC_PATH"/scan-results/resources/docker/server
             cp -r "$WORKSPACE_SRC_PATH/scan-results/galleon" "$WORKSPACE_SRC_PATH/internal-git-repo"
@@ -247,7 +229,6 @@ spec:
                 appVersion="1"
               fi
               echo "app_version=$appVersion" >> "$WORKSPACE_SRC_PATH/internal-git-repo/app.properties"
-              echo -n "$appVersion" > $(results.appVersion.path)
               appImage=quay.io/jdenise/pipeline-wildfly-app:$newBranch-$appVersion-$(params.gitCommit)
               echo "app_image=$appImage" >> "$WORKSPACE_SRC_PATH/internal-git-repo/app.properties"
               echo -n "$appImage" > $(results.appImage.path)
@@ -267,13 +248,8 @@ spec:
               mkdir -p $WORKSPACE_SRC_PATH/provisioning/docker/app
               cp $WORKSPACE_SRC_PATH/internal-git-repo/docker/app/Dockerfile "$WORKSPACE_SRC_PATH/provisioning/docker/app"
               echo -n "docker/app/Dockerfile" > $(results.appDockerfile.path)
-            #else
-              # Copy original docker file
-            #  mkdir -p $WORKSPACE_SRC_PATH/internal-git-repo/docker/app
-            #  cp $WORKSPACE_CURRENT_REPO_PATH/docker/app/Dockerfile $WORKSPACE_SRC_PATH/internal-git-repo/docker/app/Dockerfile
             else
               echo "app_version=$appVersion" >> "$WORKSPACE_SRC_PATH/internal-git-repo/app.properties"
-              echo -n "$appVersion" > $(results.appVersion.path)
               echo "app_image=$appImage" >> "$WORKSPACE_SRC_PATH/internal-git-repo/app.properties"
               echo -n "$appImage" > $(results.appImage.path)
             fi
@@ -290,10 +266,6 @@ spec:
               mkdir -p $WORKSPACE_SRC_PATH/provisioning/docker/server
               cp $WORKSPACE_SRC_PATH/internal-git-repo/docker/server/Dockerfile $WORKSPACE_SRC_PATH/provisioning/docker/server
               echo -n "docker/server/Dockerfile" > $(results.serverDockerfile.path)
-            #else
-              # Copy original docker file
-            #  mkdir -p $WORKSPACE_SRC_PATH/internal-git-repo/docker/server
-            #  cp $WORKSPACE_CURRENT_REPO_PATH/docker/server/Dockerfile $WORKSPACE_SRC_PATH/internal-git-repo/docker/server/Dockerfile
             fi
             ls -al $WORKSPACE_SRC_PATH/internal-git-repo
         else
