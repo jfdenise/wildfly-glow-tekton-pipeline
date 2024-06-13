@@ -162,7 +162,7 @@ spec:
             fi
             envFile=
             if [ -f "$srcDir/vars.env" ]; then
-              envFile="--env-file=$srcDir/vars.env"
+              envFile="--build-env-file=$srcDir/vars.env"
             fi
             # generate provisioning and openshift resources
             $glowDir/wildfly-glow scan $deployment --cloud --provision openshift_resources --output-dir "$WORKSPACE_SRC_PATH/scan-results" --properties="-Dorg.wildfly.glow.openshift.git.uri=https://github.com/jfdenise/go-to-openshift -Dorg.wildfly.glow.openshift.app.name=$appName -Dorg.wildfly.glow.openshift.server.image=quay.io/jdenise/pipeline-wildfly-server" $configFile $cliScript $bashScript $envFile
