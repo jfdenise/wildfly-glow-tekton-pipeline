@@ -9,8 +9,8 @@ spec:
     - name: project
       description: User project
   workspaces:
-    - name: app-repo
-      description: The app repo    
+    - name: internal-deployment-repo
+      description: The internal deployment repo    
   steps:
     - name: import-image
       securityContext:
@@ -20,10 +20,10 @@ spec:
         if [ -n "$(params.project)" ]; then
           oc new-project $(params.project) || oc project $(params.project)
           oc project
-          oc apply -f $(workspaces.app-repo.path)/$(params.contextDir)/argocd.yaml
+          oc apply -f $(workspaces.internal-deployment-repo)/$(params.contextDir)/argocd.yaml
           echo "ArgoCD application has been created"
         else
-          files=`ls $(workspaces.app-repo.path)/$(params.contextDir)/resources/*.yaml`
+          files=`ls $(workspaces.internal-deployment-repo.path)/$(params.contextDir)/resources/*.yaml`
           for eachfile in $files
           do
             oc apply -f "$eachfile"

@@ -15,7 +15,7 @@ spec:
   - name: internal-repo
     subPath: internal-repo
     persistentVolumeClaim:
-      claimName: glow-pipeline-data
+      claimName: glow-pipeline-data    
   - name: ssh-creds
     secret:
         secretName: my-ssh-credentials
@@ -30,6 +30,6 @@ spec:
     - name: gitRepoOwner
       value: "jfdenise"
     - name: gitRepoProject
-      value: "my-war"
+      value: "my-war-2"
     - name: gitRevision
       value: "main"

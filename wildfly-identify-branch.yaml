@@ -26,7 +26,7 @@ spec:
         gitURI=$(params.gitRepo)/$(params.gitRepoOwner)/$(params.gitRepoProject)
         gitId=$gitURI/revision/$(params.gitRevision)
         newBranch=`tr -s .:@#/ _ <<< "$gitId"`
-        code=`curl -s -o /dev/null -w "%{http_code}" https://api.github.com/repos/jfdenise/go-to-openshift/branches/$newBranch`
+        code=`curl -s -o /dev/null -w "%{http_code}" https://api.github.com/repos/jfdenise/go-to-openshift-2/branches/$newBranch`
         branchToPull="main"
         echo "curl return code $code"
         if [ "$code" = "200" ]; then
