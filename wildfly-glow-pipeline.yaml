@@ -224,7 +224,7 @@ spec:
              git checkout "${rev}"
            else
              git checkout -b "${rev}"
-             git merge --allow-unrelated-histories userRepo/$(params.gitRevision)_deployment --no-edit
+             #git merge --allow-unrelated-histories userRepo/$(params.gitRevision)_deployment --no-edit
              # At this point the internal deployment branch is bound to the user_deployment one.
            fi
            if [ -d "$(workspaces.input.path)/$(tasks.setup.results.contextDir)/$(tasks.wildfly-glow-generate.results.deploymentLocation)" ]; then
@@ -232,18 +232,38 @@ spec:
            fi
            ls -al .
            git status
-           if [ -n "$(git status --porcelain)" ]; then
+           changes="$(git status --porcelain)"
+           if [ -n "$changes" ]; then
+             # Commit the changes
              git add *
-             git commit -m "Commit from WildFly Glow pipeline"
-             # Resync with the user branch
-             # This can fail...
-             git merge userRepo/$(params.gitRevision)_deployment --no-edit
-             git push origin "${rev}"
-             # Then we apply to the user repo
+             git commit -m "Commit from WildFly Glow pipeline. 
+             $changes"
+             commitId=`git rev-parse HEAD`
+             # Build the patch
+             git format-patch -1 HEAD --stdout > changes.patch
+             echo "Patch content"
+             cat changes.patch
+             
+             # Check if the patch can be applied to the user repo
              git checkout -b $(params.gitRevision)_deployment --track userRepo/$(params.gitRevision)_deployment
-             git merge "${rev}" --no-edit
-             git push userRepo $(params.gitRevision)_deployment
-           fi
+             failure=
+             git apply --3way changes.patch --check || failure="true"
+             if [ "$failure" = "true" ]; then
+               echo "ERROR: Failure applying changes to $(params.gitRepo):$(params.gitRepoOwner)/$(params.gitRepoProject) branch $(params.gitRevision)_deployment"
+               echo "Conflicting patch generated in pipeline-conflict.patch file, make sure to manually merge the changes if needed."
+               mv changes.patch pipeline-conflict.patch
+               git add pipeline-conflict.patch
+               git commit -m "A conflict occured, check 'pipeline-conflict.patch' file, fix the conflict then: 'git apply --3way pipeline-conflict.patch', then restart the pipeline"
+               git push userRepo $(params.gitRevision)_deployment
+               exit 1
+             else
+               rm changes.patch
+               echo "Success, can apply changes to $(params.gitRepo):$(params.gitRepoOwner)/$(params.gitRepoProject) branch $(params.gitRevision)_deployment "
+               git cherry-pick $commitId || echo "Empty commit, nothing to cherry-pick"
+               git push origin "${rev}"
+               git push userRepo $(params.gitRevision)_deployment
+             fi
+           fi           
       workspaces:
         - name: source
           workspace: internal-repo
