@@ -148,7 +148,7 @@ spec:
         
         if [ -n "${deployment}" ]; then
             echo "Retrieving WildFly Glow"            
-            curl --insecure https://repository.jboss.org/nexus/content/repositories/snapshots/org/wildfly/glow/wildfly-glow/1.0.7.Final-SNAPSHOT/wildfly-glow-1.0.7.Final-20240610.114222-13.zip -LO
+            curl --insecure https://repository.jboss.org/nexus/content/repositories/snapshots/org/wildfly/glow/wildfly-glow/1.0.7.Final-SNAPSHOT/wildfly-glow-1.0.7.Final-20240617.182633-15.zip -LO
             unzip wildfly-glow*.zip -d .
             glowDir=`find $PWD -type d -iname "wildfly-glow*"`
             configFile=
@@ -234,8 +234,12 @@ spec:
               echo "app_image=$appImage" >> "$WORKSPACE_SRC_PATH/internal-git-repo/app.properties"
               echo "server_image=$serverImage" >> "$WORKSPACE_SRC_PATH/internal-git-repo/app.properties"
               echo -n "$appImage" > $(results.appImage.path)
-              # Update the deployment TODO MUST BE BETTER
-              sed -i "s|$appName:latest|$appImage|" "$WORKSPACE_SRC_PATH/deployment-git-repo/resources/$appName-deployment.yaml"
+              if [ -f "$WORKSPACE_SRC_PATH/deployment-git-repo/resources/$appName-deployment.yaml" ]; then
+                # Update the deployment TODO MUST BE BETTER
+                sed -i "s|$appName:latest|$appImage|" "$WORKSPACE_SRC_PATH/deployment-git-repo/resources/$appName-deployment.yaml"
+              else
+                sed -i "s|$appName:latest|$appImage|" "$WORKSPACE_SRC_PATH/deployment-git-repo/resources/$appName-statefulset.yaml"
+              fi
               # copy deployments in docker context
               mkdir -p $WORKSPACE_SRC_PATH/provisioning
               cp -r "$WORKSPACE_SRC_PATH/scan-results/deployments" "$WORKSPACE_SRC_PATH/provisioning"

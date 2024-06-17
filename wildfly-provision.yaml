@@ -36,7 +36,7 @@ spec:
         
         if [ -n "${deployment}" ]; then
             echo "Retrieving WildFly Glow to provision"            
-            curl --insecure https://repository.jboss.org/nexus/content/repositories/snapshots/org/wildfly/glow/wildfly-glow/1.0.7.Final-SNAPSHOT/wildfly-glow-1.0.7.Final-20240610.114222-13.zip -LO
+            curl --insecure https://repository.jboss.org/nexus/content/repositories/snapshots/org/wildfly/glow/wildfly-glow/1.0.7.Final-SNAPSHOT/wildfly-glow-1.0.7.Final-20240617.182633-15.zip -LO
             unzip wildfly-glow*.zip -d .
             glowDir=`find $PWD -type d -iname "wildfly-glow*"`
             configFile=
