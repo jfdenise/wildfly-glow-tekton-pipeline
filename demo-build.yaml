@@ -33,3 +33,5 @@ spec:
       value: "my-war-2"
     - name: gitRevision
       value: "main"
+    - name: internalGitRepo
+      value: "git@github.com:jfdenise/go-to-openshift-2"

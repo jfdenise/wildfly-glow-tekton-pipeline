@@ -13,6 +13,7 @@ spec:
       default: ""
     - name: deploy
       default: "true"
+    - name: "internalGitRepo"
   workspaces:
     - name: shared-data
     - name: ssh-creds
@@ -75,7 +76,7 @@ spec:
           workspace: ssh-creds
       params:
         - name: url
-          value: "git@github.com:jfdenise/go-to-openshift-2"
+          value: "$(params.internalGitRepo)"
         - name: revision
           value: "$(tasks.identify-internal-branch.results.branchToPull)"
         - name: subdirectory
@@ -213,19 +214,32 @@ spec:
            cd $(tasks.setup.results.contextDir) 
            git config --global --add safe.directory /workspace/source/$(tasks.setup.results.contextDir)
            rev=$(tasks.identify-internal-branch.results.newBranch)_deployment
+           userRev=$(params.gitRevision)_deployment
            # Add the user_deployment repo
            git remote add userRepo git@$(params.gitRepo):$(params.gitRepoOwner)/$(params.gitRepoProject)
            git remote update userRepo
 
-           exists=`git ls-remote --heads git@github.com:jfdenise/go-to-openshift-2 "refs/heads/${rev}" | wc -l`
+           exists=`git ls-remote --heads $(params.internalGitRepo) "refs/heads/${rev}" | wc -l`
            if [ "${exists}" = "1" ]; then
              echo "A branch already exists"
              git fetch origin "${rev}"
              git checkout "${rev}"
            else
+             git checkout init
              git checkout -b "${rev}"
-             #git merge --allow-unrelated-histories userRepo/$(params.gitRevision)_deployment --no-edit
-             # At this point the internal deployment branch is bound to the user_deployment one.
+           fi
+           if [ -d "$(workspaces.input.path)/$(tasks.setup.results.contextDir)/$(tasks.wildfly-glow-generate.results.deploymentLocation)" ]; then
+             cp -r $(workspaces.input.path)/$(tasks.setup.results.contextDir)/$(tasks.wildfly-glow-generate.results.deploymentLocation)/* .
+           fi
+           # The user deployment branch
+           exists=`git ls-remote --heads userRepo "refs/heads/${userRev}" | wc -l`
+           if [ "${exists}" = "1" ]; then
+             echo "A branch already exists"
+             git fetch userRepo "${userRev}"
+             git branch "${userRev}" --track userRepo/"$userRev"
+           else
+             # Create a branch that we will use to push to the user space
+             git branch "${userRev}"
            fi
            if [ -d "$(workspaces.input.path)/$(tasks.setup.results.contextDir)/$(tasks.wildfly-glow-generate.results.deploymentLocation)" ]; then
              cp -r $(workspaces.input.path)/$(tasks.setup.results.contextDir)/$(tasks.wildfly-glow-generate.results.deploymentLocation)/* .
@@ -245,23 +259,23 @@ spec:
              cat changes.patch
              
              # Check if the patch can be applied to the user repo
-             git checkout -b $(params.gitRevision)_deployment --track userRepo/$(params.gitRevision)_deployment
+             git checkout $userRev
              failure=
              git apply --3way changes.patch --check || failure="true"
              if [ "$failure" = "true" ]; then
-               echo "ERROR: Failure applying changes to $(params.gitRepo):$(params.gitRepoOwner)/$(params.gitRepoProject) branch $(params.gitRevision)_deployment"
+               echo "ERROR: Failure applying changes to $(params.gitRepo):$(params.gitRepoOwner)/$(params.gitRepoProject) branch $userRev"
                echo "Conflicting patch generated in pipeline-conflict.patch file, make sure to manually merge the changes if needed."
                mv changes.patch pipeline-conflict.patch
                git add pipeline-conflict.patch
                git commit -m "A conflict occured, check 'pipeline-conflict.patch' file, fix the conflict then: 'git apply --3way pipeline-conflict.patch', then restart the pipeline"
-               git push userRepo $(params.gitRevision)_deployment
+               git push userRepo $userRev
                exit 1
              else
                rm changes.patch
-               echo "Success, can apply changes to $(params.gitRepo):$(params.gitRepoOwner)/$(params.gitRepoProject) branch $(params.gitRevision)_deployment "
+               echo "Success, can apply changes to $(params.gitRepo):$(params.gitRepoOwner)/$(params.gitRepoProject) branch $userRev "
                git cherry-pick $commitId || echo "Empty commit, nothing to cherry-pick"
                git push origin "${rev}"
-               git push userRepo $(params.gitRevision)_deployment
+               git push userRepo $userRev
              fi
            fi           
       workspaces:
@@ -287,12 +301,13 @@ spec:
            cd $(tasks.setup.results.contextDir) 
            git config --global --add safe.directory /workspace/source/$(tasks.setup.results.contextDir)
            rev=$(tasks.identify-internal-branch.results.newBranch)
-           exists=`git ls-remote --heads git@github.com:jfdenise/go-to-openshift-2 "refs/heads/${rev}" | wc -l`
+           exists=`git ls-remote --heads $(params.internalGitRepo) "refs/heads/${rev}" | wc -l`
            if [ "${exists}" = "1" ]; then
              echo "A branch already exists"
              git fetch origin "$(tasks.identify-internal-branch.results.newBranch)"
              git checkout "$(tasks.identify-internal-branch.results.newBranch)"
            else
+             git checkout init
              git checkout -b "$(tasks.identify-internal-branch.results.newBranch)"
            fi
            ls -al $(workspaces.input.path)/$(tasks.setup.results.contextDir)/$(tasks.wildfly-glow-generate.results.contentLocation)/
