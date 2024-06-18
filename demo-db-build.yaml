@@ -33,3 +33,5 @@ spec:
       value: "my-db-app"
     - name: gitRevision
       value: "main"
+    - name: internalGitRepo
+      value: "git@github.com:jfdenise/go-to-openshift-2"

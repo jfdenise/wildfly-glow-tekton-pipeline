@@ -30,8 +30,10 @@ spec:
     - name: gitRepoOwner
       value: "jfdenise"
     - name: gitRepoProject
-      value: "my-war"
+      value: "my-war-2"
     - name: gitRevision
       value: "main"
     - name: project
       value: "openshift-gitops"
+    - name: internalGitRepo
+      value: "git@github.com:jfdenise/go-to-openshift-2"
