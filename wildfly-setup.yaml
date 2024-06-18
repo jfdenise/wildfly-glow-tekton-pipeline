@@ -3,9 +3,20 @@ kind: Task
 metadata:
   name: wildfly-setup-task
 spec:
+  params:
+    - name: gitRepo
+      type: string
+    - name: gitRepoOwner
+      type: string
+    - name: gitRepoProject
+      type: string
+    - name: gitRevision
+      type: string
   results:
     - name: contextDir
       description: The created dir
+    - name: appBranch
+      description: the app Branch
   workspaces:
     - name: sources
       description: The src dir
@@ -40,3 +51,7 @@ spec:
           mkdir -p "$WORKSPACE_APP_REPO_PATH/$dir"
         fi
         echo -n "$dir" > $(results.contextDir.path)
+        gitURI=$(params.gitRepo)/$(params.gitRepoOwner)/$(params.gitRepoProject)
+        gitId=$gitURI/revision/$(params.gitRevision)
+        newBranch=`tr -s .:@#/ _ <<< "$gitId"`
+        echo -n "$newBranch" > $(results.appBranch.path)

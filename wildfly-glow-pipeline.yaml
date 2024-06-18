@@ -31,9 +31,6 @@ spec:
           workspace: internal-repo
         - name: app-repo
           workspace: app-repo
-    # This one is only needed in the POC
-    # In real service, the new branch would be setup and passed as parameters to the pipeline
-    - name: identify-internal-branch
       params:
         - name: gitRepo
           value: $(params.gitRepo)
@@ -43,10 +40,6 @@ spec:
           value: "$(params.gitRepoProject)"
         - name: gitRevision
           value: "$(params.gitRevision)"
-      taskRef:
-        name: wildfly-identify-branch-task
-      runAfter: 
-        - setup
     - name: git-clone-app-repo
       taskRef:
         name: git-clone
@@ -78,11 +71,38 @@ spec:
         - name: url
           value: "$(params.internalGitRepo)"
         - name: revision
-          value: "$(tasks.identify-internal-branch.results.branchToPull)"
+          value: "init"
         - name: subdirectory
           value: "$(tasks.setup.results.contextDir)"
       runAfter: 
-        - identify-internal-branch
+        - setup
+    - name: setup-internal-repo
+      taskRef:
+        name: git-cli
+        kind: ClusterTask
+      params:
+        - name: GIT_USER_NAME
+          value: jfdenise
+        - name: GIT_USER_EMAIL
+          value: jfdenise@gmail.com
+        - name: GIT_SCRIPT
+          value: |
+           cd $(tasks.setup.results.contextDir) 
+           git config --global --add safe.directory /workspace/source/$(tasks.setup.results.contextDir)
+           newBranch=$(tasks.setup.results.appBranch)
+           exists=`git ls-remote --heads $(params.internalGitRepo) "refs/heads/${newBranch}" | wc -l`
+           if [ "${exists}" = "1" ]; then
+             echo "$newBranch already exists"
+             git fetch origin "$newBranch"
+             git checkout "$newBranch"
+           fi
+      workspaces:
+        - name: source
+          workspace: internal-repo
+        - name: ssh-directory
+          workspace: ssh-creds
+      runAfter: 
+        -  git-clone-internal-repo
     - name: wildfly-glow-generate
       taskRef:
         name: wildfly-glow-generator-task
@@ -98,7 +118,7 @@ spec:
         - name: contextDir
           value: "$(tasks.setup.results.contextDir)"
         - name: newBranch
-          value: "$(tasks.identify-internal-branch.results.newBranch)"
+          value: "$(tasks.setup.results.appBranch)"
       workspaces:
         - name: sources
           workspace: shared-data
@@ -108,7 +128,7 @@ spec:
           workspace: app-repo
       runAfter: 
         - git-clone-app-repo
-        - git-clone-internal-repo
+        - setup-internal-repo
     - name: check-server-image-exists
       taskRef:
         name: wildfly-check-image-exists-task
@@ -213,7 +233,7 @@ spec:
           value: |
            cd $(tasks.setup.results.contextDir) 
            git config --global --add safe.directory /workspace/source/$(tasks.setup.results.contextDir)
-           rev=$(tasks.identify-internal-branch.results.newBranch)_deployment
+           rev=$(tasks.setup.results.appBranch)_deployment
            userRev=$(params.gitRevision)_deployment
            # Add the user_deployment repo
            git remote add userRepo git@$(params.gitRepo):$(params.gitRepoOwner)/$(params.gitRepoProject)
@@ -225,7 +245,7 @@ spec:
              git fetch origin "${rev}"
              git checkout "${rev}"
            else
-             git checkout init
+             git checkout -b init_internal_deployment --track origin/init
              git checkout -b "${rev}"
            fi
            if [ -d "$(workspaces.input.path)/$(tasks.setup.results.contextDir)/$(tasks.wildfly-glow-generate.results.deploymentLocation)" ]; then
@@ -260,14 +280,14 @@ spec:
              
              # Check if the patch can be applied to the user repo
              git checkout $userRev
-             failure=
-             git apply --3way changes.patch --check || failure="true"
-             if [ "$failure" = "true" ]; then
+             # Use 3way to ignore added files
+             res=$(git apply --3way changes.patch --check 2>&1)
+             if [[ "$res" =~  .*" with conflicts" ]]; then
                echo "ERROR: Failure applying changes to $(params.gitRepo):$(params.gitRepoOwner)/$(params.gitRepoProject) branch $userRev"
                echo "Conflicting patch generated in pipeline-conflict.patch file, make sure to manually merge the changes if needed."
                mv changes.patch pipeline-conflict.patch
                git add pipeline-conflict.patch
-               git commit -m "A conflict occured, check 'pipeline-conflict.patch' file, fix the conflict then: 'git apply --3way pipeline-conflict.patch', then restart the pipeline"
+               git commit -m "A conflict occured, check 'pipeline-conflict.patch' file, fix the conflict then call 'git apply pipeline-conflict.patch', delete the patch file then restart the pipeline"
                git push userRepo $userRev
                exit 1
              else
@@ -300,15 +320,15 @@ spec:
           value: |
            cd $(tasks.setup.results.contextDir) 
            git config --global --add safe.directory /workspace/source/$(tasks.setup.results.contextDir)
-           rev=$(tasks.identify-internal-branch.results.newBranch)
+           rev=$(tasks.setup.results.appBranch)
            exists=`git ls-remote --heads $(params.internalGitRepo) "refs/heads/${rev}" | wc -l`
            if [ "${exists}" = "1" ]; then
              echo "A branch already exists"
-             git fetch origin "$(tasks.identify-internal-branch.results.newBranch)"
-             git checkout "$(tasks.identify-internal-branch.results.newBranch)"
+             git fetch origin "$rev"
+             git checkout "$rev"
            else
-             git checkout init
-             git checkout -b "$(tasks.identify-internal-branch.results.newBranch)"
+             git checkout -b init_internal --track origin/init
+             git checkout -b "$rev"
            fi
            ls -al $(workspaces.input.path)/$(tasks.setup.results.contextDir)/$(tasks.wildfly-glow-generate.results.contentLocation)/
            cp -r $(workspaces.input.path)/$(tasks.setup.results.contextDir)/$(tasks.wildfly-glow-generate.results.contentLocation)/* .
@@ -317,7 +337,7 @@ spec:
            if [ -n "$(git status --porcelain)" ]; then
              git add *
              git commit -m "Commit from WildFly Glow pipeline"
-             git push origin "$(tasks.identify-internal-branch.results.newBranch)"
+             git push origin "$rev"
            fi
            # Checkout the deployment branch for the deploy. TO CLEAN!!!!
            git checkout "${rev}"_deployment
