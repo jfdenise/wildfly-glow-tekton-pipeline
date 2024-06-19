@@ -42,6 +42,8 @@ spec:
       description: do we need to build the server image
     - name: needBuildAppImage
       description: do we need to build the app image
+    - name: needRefreshDeployment
+      description: do we need to push to the deployment branch
     - name: serverDockerfile
       description: where the docker file is located
     - name: appDockerfile
@@ -192,6 +194,8 @@ spec:
                 rm "$WORKSPACE_SRC_PATH/deployment-git-repo/resources/$appName-route.yaml"
               fi
             fi
+            echo -n "true" > $(results.needRefreshDeployment.path)
+            
             imageProperties="$WORKSPACE_SRC_PATH"/scan-results/resources/images/images.properties
             while IFS="=" read -r key value; do
             case "$key" in
@@ -248,12 +252,6 @@ spec:
               echo "app_image=$appImage" >> "$WORKSPACE_SRC_PATH/internal-git-repo/app.properties"
               echo "server_image=$serverImage" >> "$WORKSPACE_SRC_PATH/internal-git-repo/app.properties"
               echo -n "$appImage" > $(results.appImage.path)
-              if [ -f "$WORKSPACE_SRC_PATH/deployment-git-repo/resources/$appName-deployment.yaml" ]; then
-                # Update the deployment TODO MUST BE BETTER
-                sed -i "s|$appName:latest|$appImage|" "$WORKSPACE_SRC_PATH/deployment-git-repo/resources/$appName-deployment.yaml"
-              else
-                sed -i "s|$appName:latest|$appImage|" "$WORKSPACE_SRC_PATH/deployment-git-repo/resources/$appName-statefulset.yaml"
-              fi
               # copy deployments in docker context
               mkdir -p $WORKSPACE_SRC_PATH/provisioning
               cp -r "$WORKSPACE_SRC_PATH/scan-results/deployments" "$WORKSPACE_SRC_PATH/provisioning"
@@ -276,6 +274,12 @@ spec:
               echo "app_version=$appVersion" >> "$WORKSPACE_SRC_PATH/internal-git-repo/app.properties"
               echo "app_image=$appImage" >> "$WORKSPACE_SRC_PATH/internal-git-repo/app.properties"
               echo -n "$appImage" > $(results.appImage.path)
+              if [ -f "$WORKSPACE_SRC_PATH/deployment-git-repo/resources/$appName-deployment.yaml" ]; then
+                # Update the deployment TODO MUST BE BETTER
+                sed -i "s|$appName:latest|$appImage|" "$WORKSPACE_SRC_PATH/deployment-git-repo/resources/$appName-deployment.yaml"
+              else
+                sed -i "s|$appName:latest|$appImage|" "$WORKSPACE_SRC_PATH/deployment-git-repo/resources/$appName-statefulset.yaml"
+              fi
             fi
             ls -al $WORKSPACE_SRC_PATH/internal-git-repo
         else

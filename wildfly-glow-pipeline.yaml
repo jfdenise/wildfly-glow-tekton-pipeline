@@ -242,6 +242,10 @@ spec:
       taskRef:
         name: git-cli
         kind: ClusterTask
+      when:
+      - input: "$(tasks.wildfly-glow-generate.results.needRefreshDeployment)"
+        operator: in
+        values: ["true"]
       params:
         - name: GIT_USER_NAME
           value: jfdenise
@@ -382,6 +386,9 @@ spec:
         name: wildfly-deploy-task
       when:
       - input: "$(params.deploy)"
+        operator: in
+        values: ["true"]
+      - input: "$(tasks.wildfly-glow-generate.results.needRefreshDeployment)"
         operator: in
         values: ["true"]
       workspaces:
