@@ -260,6 +260,11 @@ spec:
               cp "$WORKSPACE_SRC_PATH"/scan-results/resources/docker/app/Dockerfile $WORKSPACE_SRC_PATH/internal-git-repo/docker/app
               mkdir -p $WORKSPACE_SRC_PATH/provisioning/docker/app
               cp $WORKSPACE_SRC_PATH/internal-git-repo/docker/app/Dockerfile "$WORKSPACE_SRC_PATH/provisioning/docker/app"
+              # Copy Docker file
+              mkdir -p "$WORKSPACE_SRC_PATH"/internal-git-repo/docker/server
+              cp "$WORKSPACE_SRC_PATH"/scan-results/resources/docker/server/Dockerfile $WORKSPACE_SRC_PATH/internal-git-repo/docker/server
+              mkdir -p $WORKSPACE_SRC_PATH/provisioning/docker/server
+              cp $WORKSPACE_SRC_PATH/internal-git-repo/docker/server/Dockerfile $WORKSPACE_SRC_PATH/provisioning/docker/server
             else
               echo "app_version=$appVersion" >> "$WORKSPACE_SRC_PATH/internal-git-repo/app.properties"
               echo "app_image=$appImage" >> "$WORKSPACE_SRC_PATH/internal-git-repo/app.properties"

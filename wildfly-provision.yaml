@@ -46,11 +46,6 @@ spec:
             # provision server
             $glowDir/wildfly-glow scan $deployment --cloud --provision server --output-dir "$WORKSPACE_SRC_PATH/provisioning/server" $configFile
             rm $WORKSPACE_SRC_PATH/provisioning/server/standalone/deployments/*.*
-            # Copy Docker file
-            mkdir -p "$WORKSPACE_SRC_PATH"/internal-git-repo/docker/server
-            cp "$WORKSPACE_SRC_PATH"/scan-results/resources/docker/server/Dockerfile $WORKSPACE_SRC_PATH/internal-git-repo/docker/server
-            mkdir -p $WORKSPACE_SRC_PATH/provisioning/docker/server
-            cp $WORKSPACE_SRC_PATH/internal-git-repo/docker/server/Dockerfile $WORKSPACE_SRC_PATH/provisioning/docker/server
         else
             echo "No deployment to scan!"
             exit 1

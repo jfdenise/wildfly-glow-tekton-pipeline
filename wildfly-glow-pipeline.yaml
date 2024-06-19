@@ -269,7 +269,10 @@ spec:
              git branch "${userRev}" --track userRepo/"$userRev"
            else
              # Create a branch that we will use to push to the user space
-             git branch "${userRev}"
+             git checkout -b user_init_internal --track userRepo/init
+             git checkout -b "$userRev"
+             # Switch back to the internal deployment branch
+             git checkout "${rev}"
            fi
            if [ -d "$(workspaces.input.path)/$(tasks.setup.results.contextDir)/$(tasks.wildfly-glow-generate.results.deploymentLocation)" ]; then
              cp -r $(workspaces.input.path)/$(tasks.setup.results.contextDir)/$(tasks.wildfly-glow-generate.results.deploymentLocation)/* .
@@ -304,8 +307,8 @@ spec:
                rm changes.patch
                echo "Success, can apply changes to $(params.gitRepo):$(params.gitRepoOwner)/$(params.gitRepoProject) branch $userRev "
                git cherry-pick $commitId || echo "Empty commit, nothing to cherry-pick"
-               git push origin "${rev}"
                git push userRepo $userRev
+               git push origin "${rev}"
              fi
            fi           
       workspaces:
