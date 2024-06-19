@@ -343,8 +343,8 @@ spec:
                rm changes.patch
                echo "Success, can apply changes to $(params.gitRepo):$(params.gitRepoOwner)/$(params.gitRepoProject) branch $userRev "
                git cherry-pick $commitId || echo "Empty commit, nothing to cherry-pick"
-               git push userRepo $userRev
                git push origin "${rev}"
+               git push userRepo $userRev
              fi
            fi           
       workspaces:
