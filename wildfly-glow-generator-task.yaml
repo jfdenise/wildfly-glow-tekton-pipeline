@@ -23,6 +23,8 @@ spec:
      type: string
    - name: "serverImageRepository"
      type: string
+   - name: "openshift"
+     type: string
   results:
     - name: contentLocation
       description: Where the generated content has been put
@@ -184,6 +186,11 @@ spec:
             cp "$WORKSPACE_SRC_PATH"/scan-results/resources/deployment/*.yaml "$WORKSPACE_SRC_PATH/deployment-git-repo/resources"
             if [ -d "$WORKSPACE_SRC_PATH/scan-results/resources/deployers" ]; then
               cp "$WORKSPACE_SRC_PATH"/scan-results/resources/deployers/*.yaml "$WORKSPACE_SRC_PATH/deployment-git-repo/resources"
+            fi
+            if [ ! "$(params.openshift)" = "true" ]; then
+              if [ -f "$WORKSPACE_SRC_PATH/deployment-git-repo/resources/$appName-route.yaml" ]; then
+                rm "$WORKSPACE_SRC_PATH/deployment-git-repo/resources/$appName-route.yaml"
+              fi
             fi
             imageProperties="$WORKSPACE_SRC_PATH"/scan-results/resources/images/images.properties
             while IFS="=" read -r key value; do

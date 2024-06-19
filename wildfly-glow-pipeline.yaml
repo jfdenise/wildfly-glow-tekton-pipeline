@@ -44,6 +44,11 @@ spec:
           value: "$(params.gitRepoProject)"
         - name: gitRevision
           value: "$(params.gitRevision)"
+    - name: identify-cluster
+      taskRef:
+        name: wildfly-detect-openshift-task
+      runAfter: 
+        - setup
     - name: git-clone-app-repo
       taskRef:
         name: git-clone
@@ -129,6 +134,8 @@ spec:
           value: "$(params.applicationImageRepository)"
         - name: serverImageRepository
           value: "$(params.serverImageRepository)"
+        - name: openshift
+          value: "$(tasks.identify-cluster.results.openshift)"
       workspaces:
         - name: sources
           workspace: shared-data
@@ -139,6 +146,7 @@ spec:
       runAfter: 
         - git-clone-app-repo
         - setup-internal-repo
+        - identify-cluster
     - name: check-server-image-exists
       taskRef:
         name: wildfly-check-image-exists-task
