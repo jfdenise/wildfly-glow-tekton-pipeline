@@ -12,6 +12,7 @@ oc create secret generic my-ssh-credentials --from-file=known_hosts=/home/jdenis
 * Add tekton and gitops operators
 
 * task/pipeline
+oc apply -f wildfly-argocd-resource-generator.yaml
 oc apply -f wildfly-check-image-exists.yaml
 oc apply -f wildfly-cleanup.yaml
 oc apply -f wildfly-deploy.yaml

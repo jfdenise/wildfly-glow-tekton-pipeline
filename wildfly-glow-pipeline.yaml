@@ -147,6 +147,19 @@ spec:
         - git-clone-app-repo
         - setup-internal-repo
         - identify-cluster
+    - name: check-app-image-exists
+      taskRef:
+        name: wildfly-check-image-exists-task
+# If we enable this condition, and we don't need to build an app image, all following tasks are not executed. Bug in Tekton?'
+#      when:
+#      - input: "$(tasks.wildfly-glow-generate.results.needBuildAppImage)"
+#        operator: in
+#        values: ["true"]
+      params:
+        - name: image
+          value: "$(tasks.wildfly-glow-generate.results.appImage)"
+      runAfter: 
+        - wildfly-glow-generate
     - name: check-server-image-exists
       taskRef:
         name: wildfly-check-image-exists-task
@@ -201,19 +214,6 @@ spec:
           workspace: shared-data
         - name: dockerconfig
           workspace: dockerconfig
-    - name: check-app-image-exists
-      taskRef:
-        name: wildfly-check-image-exists-task
-# If we enable this condition, and we don't need to build an app image, all following tasks are not executed. Bug in Tekton?'
-#      when:
-#      - input: "$(tasks.wildfly-glow-generate.results.needBuildAppImage)"
-#        operator: in
-#        values: ["true"]
-      params:
-        - name: image
-          value: "$(tasks.wildfly-glow-generate.results.appImage)"
-      runAfter: 
-        - build-server-image
     - name: build-app-image
       taskRef:
         name: buildah
@@ -232,12 +232,36 @@ spec:
         - name: TLSVERIFY
           value: "false"
       runAfter: 
+        - build-server-image
         - check-app-image-exists
       workspaces:
         - name: source
           workspace: shared-data
         - name: dockerconfig
           workspace: dockerconfig
+    - name: generate-argocd-resource
+      taskRef:
+        name: wildfly-argocd-resource-generator-task
+      params:
+        - name: gitRepo
+          value: "$(params.gitRepo)/$(params.gitRepoOwner)/$(params.gitRepoProject)"
+        - name: gitRevision
+          value: "$(params.gitRevision)_deployment"
+        - name: contextDir
+          value: "$(tasks.setup.results.contextDir)"
+        - name: userProject
+          value: "$(params.userProject)"
+        - name: appName
+          value: "$(tasks.wildfly-glow-generate.results.appName)"
+      workspaces:
+        - name: sources
+          workspace: shared-data
+      when:
+      - input: "$(tasks.wildfly-glow-generate.results.needRefreshDeployment)"
+        operator: in
+        values: ["true"]
+      runAfter: 
+        - wildfly-glow-generate
     - name: git-update-deployment-repo-and-push
       taskRef:
         name: git-cli
@@ -331,7 +355,8 @@ spec:
         - name: ssh-directory
           workspace: ssh-creds
       runAfter: 
-        -  build-app-image
+        -  generate-argocd-resource
+        - build-app-image
     - name: git-update-internal-repo-and-push
       taskRef:
         name: git-cli
