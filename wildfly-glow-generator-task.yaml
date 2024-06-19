@@ -116,6 +116,7 @@ spec:
         if [ "$doNothing" = "true" ]; then
           echo -n "false" > $(results.needBuildAppImage.path)
           echo -n "false" > $(results.needBuildServerImage.path)
+          echo -n "false" > $(results.needRefreshDeployment.path)
           exit 0
         fi
         for eachfile in $files
@@ -124,15 +125,15 @@ spec:
             deployment="$deployment $eachfile"
           fi
         done
-        cat <<EOF > "$WORKSPACE_SRC_PATH/internal-git-repo/app.properties"
-        git_repo=$(params.gitRepo)
-        git_revision=$(params.gitRevision)
-        git_commit=$(params.gitCommit)
-        git_committer_date=$(params.gitCommitterDate)
-        app_name=$appName
-        EOF
 
         if [ -n "${deployment}" ]; then
+
+            echo "git_repo=$(params.gitRepo)" > "$WORKSPACE_SRC_PATH/internal-git-repo/app.properties"
+            echo "git_revision=$(params.gitRevision)" >> "$WORKSPACE_SRC_PATH/internal-git-repo/app.properties"
+            echo "git_commit=$(params.gitCommit)" >> "$WORKSPACE_SRC_PATH/internal-git-repo/app.properties"
+            echo "git_committer_date=$(params.gitCommitterDate)" >> "$WORKSPACE_SRC_PATH/internal-git-repo/app.properties"
+            echo "app_name=$appName" >> "$WORKSPACE_SRC_PATH/internal-git-repo/app.properties"
+
             echo "Retrieving WildFly Glow"            
             curl --insecure https://repository.jboss.org/nexus/content/repositories/snapshots/org/wildfly/glow/wildfly-glow/1.0.7.Final-SNAPSHOT/wildfly-glow-1.0.7.Final-20240619.151141-16.zip -LO
             unzip wildfly-glow*.zip -d .
@@ -155,9 +156,10 @@ spec:
             fi
             # generate provisioning and openshift resources
             $glowDir/wildfly-glow scan $deployment --cloud --provision openshift_resources --output-dir "$WORKSPACE_SRC_PATH/scan-results" --properties="-Dorg.wildfly.glow.openshift.app.name=$appName -Dorg.wildfly.glow.openshift.server.image=$(params.serverImageRepository)" $configFile $cliScript $bashScript $envFile
-            ls -l "$WORKSPACE_SRC_PATH"/scan-results/resources/docker/app
-            ls -l "$WORKSPACE_SRC_PATH"/scan-results/resources/docker/server
+
+            # Copy generated provisioning.xml
             cp -r "$WORKSPACE_SRC_PATH/scan-results/galleon" "$WORKSPACE_SRC_PATH/internal-git-repo"
+
             # openshift resources
             mkdir -p "$WORKSPACE_SRC_PATH/deployment-git-repo/resources"
             cp "$WORKSPACE_SRC_PATH"/scan-results/resources/deployment/*.yaml "$WORKSPACE_SRC_PATH/deployment-git-repo/resources"
@@ -171,6 +173,7 @@ spec:
             fi
             echo -n "true" > $(results.needRefreshDeployment.path)
             
+            # Retrieve the hash computed by Glow
             imageProperties="$WORKSPACE_SRC_PATH"/scan-results/resources/images/images.properties
             while IFS="=" read -r key value; do
             case "$key" in
@@ -196,7 +199,7 @@ spec:
               echo "NEWONE"
               cat $WORKSPACE_SRC_PATH/internal-git-repo/server-checksum.chk
               if [ "$original" = "$newOne" ]; then
-               buildServerImage="false"
+                buildServerImage="false"
               fi
             fi
             echo -n "$buildServerImage" > $(results.needBuildServerImage.path)
@@ -216,17 +219,13 @@ spec:
             fi
             echo -n "$buildAppImage" > $(results.needBuildAppImage.path)
             if [ $buildAppImage = "true" ]; then
-              echo "Must build a new app image"
+              echo "A new app image is required"
               if [ -n "$appVersion" ]; then
                 appVersion="$(($appVersion + 1))"
               else
                 appVersion="1"
               fi
-              echo "app_version=$appVersion" >> "$WORKSPACE_SRC_PATH/internal-git-repo/app.properties"
               appImage=$(params.applicationImageRepository):$newBranch-$appVersion-$(params.gitCommit)
-              echo "app_image=$appImage" >> "$WORKSPACE_SRC_PATH/internal-git-repo/app.properties"
-              echo "server_image=$serverImage" >> "$WORKSPACE_SRC_PATH/internal-git-repo/app.properties"
-              echo -n "$appImage" > $(results.appImage.path)
               # copy deployments in docker context
               mkdir -p $WORKSPACE_SRC_PATH/provisioning
               cp -r "$WORKSPACE_SRC_PATH/scan-results/deployments" "$WORKSPACE_SRC_PATH/provisioning"
@@ -245,18 +244,17 @@ spec:
               cp "$WORKSPACE_SRC_PATH"/scan-results/resources/docker/server/Dockerfile $WORKSPACE_SRC_PATH/internal-git-repo/docker/server
               mkdir -p $WORKSPACE_SRC_PATH/provisioning/docker/server
               cp $WORKSPACE_SRC_PATH/internal-git-repo/docker/server/Dockerfile $WORKSPACE_SRC_PATH/provisioning/docker/server
-            else
-              echo "app_version=$appVersion" >> "$WORKSPACE_SRC_PATH/internal-git-repo/app.properties"
-              echo "app_image=$appImage" >> "$WORKSPACE_SRC_PATH/internal-git-repo/app.properties"
-              echo -n "$appImage" > $(results.appImage.path)
-              if [ -f "$WORKSPACE_SRC_PATH/deployment-git-repo/resources/$appName-deployment.yaml" ]; then
-                # Update the deployment TODO MUST BE BETTER
-                sed -i "s|$appName:latest|$appImage|" "$WORKSPACE_SRC_PATH/deployment-git-repo/resources/$appName-deployment.yaml"
-              else
-                sed -i "s|$appName:latest|$appImage|" "$WORKSPACE_SRC_PATH/deployment-git-repo/resources/$appName-statefulset.yaml"
-              fi
             fi
-            ls -al $WORKSPACE_SRC_PATH/internal-git-repo
+            if [ -f "$WORKSPACE_SRC_PATH/deployment-git-repo/resources/$appName-deployment.yaml" ]; then
+              # Update the deployment TODO MUST BE BETTER
+              sed -i "s|$appName:latest|$appImage|" "$WORKSPACE_SRC_PATH/deployment-git-repo/resources/$appName-deployment.yaml"
+            else
+              sed -i "s|$appName:latest|$appImage|" "$WORKSPACE_SRC_PATH/deployment-git-repo/resources/$appName-statefulset.yaml"
+            fi
+            echo "app_version=$appVersion" >> "$WORKSPACE_SRC_PATH/internal-git-repo/app.properties"
+            echo "app_image=$appImage" >> "$WORKSPACE_SRC_PATH/internal-git-repo/app.properties"
+            echo "server_image=$serverImage" >> "$WORKSPACE_SRC_PATH/internal-git-repo/app.properties"
+            echo -n "$appImage" > $(results.appImage.path)
         else
             echo "No deployment to scan!"
             exit 1
