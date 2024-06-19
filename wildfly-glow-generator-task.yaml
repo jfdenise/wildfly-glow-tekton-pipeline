@@ -114,6 +114,7 @@ spec:
         # provisioning directory is required for both server and app image
         echo -n "provisioning" > $(results.dockerContext.path)
         if [ "$doNothing" = "true" ]; then
+          echo "Nothing to do."
           echo -n "false" > $(results.needBuildAppImage.path)
           echo -n "false" > $(results.needBuildServerImage.path)
           echo -n "false" > $(results.needRefreshDeployment.path)

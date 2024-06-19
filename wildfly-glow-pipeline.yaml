@@ -150,7 +150,7 @@ spec:
     - name: check-app-image-exists
       taskRef:
         name: wildfly-check-image-exists-task
-# If we enable this condition, and we don't need to build an app image, all following tasks are not executed. Bug in Tekton?'
+# We can't enable this condition because if this task is not executed it will not produce results executed by following ones that will be not executed
 #      when:
 #      - input: "$(tasks.wildfly-glow-generate.results.needBuildAppImage)"
 #        operator: in
@@ -163,7 +163,7 @@ spec:
     - name: check-server-image-exists
       taskRef:
         name: wildfly-check-image-exists-task
-     # If we enable this condition, and we don't need to build a server image, all following tasks are not executed. Bug in Tekton?'
+# We can't enable this condition because if this task is not executed it will not produce results executed by following ones that will be not executed
      # when:
      # - input: "$(tasks.wildfly-glow-generate.results.needBuildServerImage)"
      #   operator: in
