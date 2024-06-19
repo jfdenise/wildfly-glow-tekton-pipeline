@@ -39,3 +39,7 @@ spec:
       value: "openshift-gitops"
     - name: internalGitRepo
       value: "git@github.com:jfdenise/go-to-openshift-2"
+    - name: "applicationImageRepository"
+      value: "quay.io/jdenise/pipeline-wildfly-app"
+    - name: "serverImageRepository"
+      value: "quay.io/jdenise/pipeline-wildfly-server"

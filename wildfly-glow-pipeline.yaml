@@ -16,6 +16,8 @@ spec:
     - name: deploy
       default: "true"
     - name: "internalGitRepo"
+    - name: "applicationImageRepository"
+    - name: "serverImageRepository"
   workspaces:
     - name: shared-data
     - name: ssh-creds
@@ -123,6 +125,10 @@ spec:
           value: "$(tasks.setup.results.appBranch)"
         - name: userProject
           value: "$(params.userProject)"
+        - name: applicationImageRepository
+          value: "$(params.applicationImageRepository)"
+        - name: serverImageRepository
+          value: "$(params.serverImageRepository)"
       workspaces:
         - name: sources
           workspace: shared-data

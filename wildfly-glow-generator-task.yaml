@@ -19,6 +19,10 @@ spec:
      type: string
    - name: userProject
      type: string
+   - name: "applicationImageRepository"
+     type: string
+   - name: "serverImageRepository"
+     type: string
   results:
     - name: contentLocation
       description: Where the generated content has been put
@@ -171,7 +175,7 @@ spec:
               envFile="--build-env-file=$srcDir/vars.env"
             fi
             # generate provisioning and openshift resources
-            $glowDir/wildfly-glow scan $deployment --cloud --provision openshift_resources --output-dir "$WORKSPACE_SRC_PATH/scan-results" --properties="-Dorg.wildfly.glow.openshift.app.name=$appName -Dorg.wildfly.glow.openshift.server.image=quay.io/jdenise/pipeline-wildfly-server" $configFile $cliScript $bashScript $envFile
+            $glowDir/wildfly-glow scan $deployment --cloud --provision openshift_resources --output-dir "$WORKSPACE_SRC_PATH/scan-results" --properties="-Dorg.wildfly.glow.openshift.app.name=$appName -Dorg.wildfly.glow.openshift.server.image=$(params.serverImageRepository)" $configFile $cliScript $bashScript $envFile
             ls -l "$WORKSPACE_SRC_PATH"/scan-results/resources/docker/app
             ls -l "$WORKSPACE_SRC_PATH"/scan-results/resources/docker/server
             cp -r "$WORKSPACE_SRC_PATH/scan-results/galleon" "$WORKSPACE_SRC_PATH/internal-git-repo"
@@ -189,7 +193,7 @@ spec:
             esac
             done < "$imageProperties"
 
-            serverImage=quay.io/jdenise/pipeline-wildfly-server:$serverTag
+            serverImage=$(params.serverImageRepository):$serverTag
             echo -n "$serverImage" > $(results.serverImage.path)
             echo "$serverTag serverHash" >> $WORKSPACE_SRC_PATH/internal-git-repo/app-checksum.chk
             echo "$appTag appHash" >> $WORKSPACE_SRC_PATH/internal-git-repo/app-checksum.chk
@@ -233,7 +237,7 @@ spec:
                 appVersion="1"
               fi
               echo "app_version=$appVersion" >> "$WORKSPACE_SRC_PATH/internal-git-repo/app.properties"
-              appImage=quay.io/jdenise/pipeline-wildfly-app:$newBranch-$appVersion-$(params.gitCommit)
+              appImage=$(params.applicationImageRepository):$newBranch-$appVersion-$(params.gitCommit)
               echo "app_image=$appImage" >> "$WORKSPACE_SRC_PATH/internal-git-repo/app.properties"
               echo "server_image=$serverImage" >> "$WORKSPACE_SRC_PATH/internal-git-repo/app.properties"
               echo -n "$appImage" > $(results.appImage.path)
