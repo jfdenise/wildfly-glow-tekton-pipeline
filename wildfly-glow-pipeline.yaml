@@ -394,7 +394,7 @@ spec:
            echo CURRENT LOCATION: $PWD
            ls -l
       when:
-      - input: "$(tasks.wildfly-glow-generate.results.needBuildAppImage)"
+      - input: "$(tasks.wildfly-glow-generate.results.needRefreshDeployment)"
         operator: in
         values: ["true"]
       workspaces:
