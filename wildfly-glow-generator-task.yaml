@@ -17,6 +17,8 @@ spec:
      type: string
    - name: newBranch
      type: string
+   - name: userProject
+     type: string
   results:
     - name: contentLocation
       description: Where the generated content has been put
@@ -125,27 +127,28 @@ spec:
         EOF
         
         mkdir -p "$WORKSPACE_SRC_PATH/deployment-git-repo/resources"
-        echo "apiVersion: argoproj.io/v1alpha1" > "$WORKSPACE_SRC_PATH/deployment-git-repo/argocd.yaml"
-        echo "kind: Application" >> "$WORKSPACE_SRC_PATH/deployment-git-repo/argocd.yaml"
-        echo "metadata:" >> "$WORKSPACE_SRC_PATH/deployment-git-repo/argocd.yaml"
-        echo "  name: $appName" >> "$WORKSPACE_SRC_PATH/deployment-git-repo/argocd.yaml"
-        echo "  namespace: openshift-gitops" >> "$WORKSPACE_SRC_PATH/deployment-git-repo/argocd.yaml"
-        echo "spec:" >> "$WORKSPACE_SRC_PATH/deployment-git-repo/argocd.yaml"
-        echo "  destination:" >> "$WORKSPACE_SRC_PATH/deployment-git-repo/argocd.yaml"
-        echo "    namespace: openshift-gitops" >> "$WORKSPACE_SRC_PATH/deployment-git-repo/argocd.yaml"
-        echo "    server: https://kubernetes.default.svc" >> "$WORKSPACE_SRC_PATH/deployment-git-repo/argocd.yaml"
-        echo "  project: default" >> "$WORKSPACE_SRC_PATH/deployment-git-repo/argocd.yaml"
-        echo "  source: " >> "$WORKSPACE_SRC_PATH/deployment-git-repo/argocd.yaml"
-        echo "    path: resources" >> "$WORKSPACE_SRC_PATH/deployment-git-repo/argocd.yaml"
-        echo "    repoURL: http://$(params.gitRepo)" >> "$WORKSPACE_SRC_PATH/deployment-git-repo/argocd.yaml"
-        echo "    targetRevision: $(params.gitRevision)_deployment" >> "$WORKSPACE_SRC_PATH/deployment-git-repo/argocd.yaml"
-        echo "  syncPolicy: " >> "$WORKSPACE_SRC_PATH/deployment-git-repo/argocd.yaml"
-        echo "    automated:" >> "$WORKSPACE_SRC_PATH/deployment-git-repo/argocd.yaml"
-        echo "      prune: true" >> "$WORKSPACE_SRC_PATH/deployment-git-repo/argocd.yaml"
-        echo "      selfHeal: false" >> "$WORKSPACE_SRC_PATH/deployment-git-repo/argocd.yaml"
-        echo "    syncOptions:" >> "$WORKSPACE_SRC_PATH/deployment-git-repo/argocd.yaml"
-        echo "    - CreateNamespace=false" >> "$WORKSPACE_SRC_PATH/deployment-git-repo/argocd.yaml"
-        
+        if [ -n "$(params.userProject)" ]; then
+          echo "apiVersion: argoproj.io/v1alpha1" > "$WORKSPACE_SRC_PATH/deployment-git-repo/argocd.yaml"
+          echo "kind: Application" >> "$WORKSPACE_SRC_PATH/deployment-git-repo/argocd.yaml"
+          echo "metadata:" >> "$WORKSPACE_SRC_PATH/deployment-git-repo/argocd.yaml"
+          echo "  name: $appName" >> "$WORKSPACE_SRC_PATH/deployment-git-repo/argocd.yaml"
+          echo "  namespace: openshift-gitops" >> "$WORKSPACE_SRC_PATH/deployment-git-repo/argocd.yaml"
+          echo "spec:" >> "$WORKSPACE_SRC_PATH/deployment-git-repo/argocd.yaml"
+          echo "  destination:" >> "$WORKSPACE_SRC_PATH/deployment-git-repo/argocd.yaml"
+          echo "    namespace: $(params.userProject)" >> "$WORKSPACE_SRC_PATH/deployment-git-repo/argocd.yaml"
+          echo "    server: https://kubernetes.default.svc" >> "$WORKSPACE_SRC_PATH/deployment-git-repo/argocd.yaml"
+          echo "  project: default" >> "$WORKSPACE_SRC_PATH/deployment-git-repo/argocd.yaml"
+          echo "  source: " >> "$WORKSPACE_SRC_PATH/deployment-git-repo/argocd.yaml"
+          echo "    path: resources" >> "$WORKSPACE_SRC_PATH/deployment-git-repo/argocd.yaml"
+          echo "    repoURL: https://$(params.gitRepo)" >> "$WORKSPACE_SRC_PATH/deployment-git-repo/argocd.yaml"
+          echo "    targetRevision: $(params.gitRevision)_deployment" >> "$WORKSPACE_SRC_PATH/deployment-git-repo/argocd.yaml"
+          echo "  syncPolicy: " >> "$WORKSPACE_SRC_PATH/deployment-git-repo/argocd.yaml"
+          echo "    automated:" >> "$WORKSPACE_SRC_PATH/deployment-git-repo/argocd.yaml"
+          echo "      prune: true" >> "$WORKSPACE_SRC_PATH/deployment-git-repo/argocd.yaml"
+          echo "      selfHeal: false" >> "$WORKSPACE_SRC_PATH/deployment-git-repo/argocd.yaml"
+          echo "    syncOptions:" >> "$WORKSPACE_SRC_PATH/deployment-git-repo/argocd.yaml"
+          echo "    - CreateNamespace=false" >> "$WORKSPACE_SRC_PATH/deployment-git-repo/argocd.yaml"
+        fi
         if [ -n "${deployment}" ]; then
             echo "Retrieving WildFly Glow"            
             curl --insecure https://repository.jboss.org/nexus/content/repositories/snapshots/org/wildfly/glow/wildfly-glow/1.0.7.Final-SNAPSHOT/wildfly-glow-1.0.7.Final-20240617.182633-15.zip -LO

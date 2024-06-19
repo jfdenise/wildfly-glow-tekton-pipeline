@@ -9,7 +9,9 @@ spec:
     - name: gitRepoProject
     - name: gitRevision
       default: ""
-    - name: project
+    - name: userProject
+      default: ""
+    - name: gitopsProject
       default: ""
     - name: deploy
       default: "true"
@@ -119,6 +121,8 @@ spec:
           value: "$(tasks.setup.results.contextDir)"
         - name: newBranch
           value: "$(tasks.setup.results.appBranch)"
+        - name: userProject
+          value: "$(params.userProject)"
       workspaces:
         - name: sources
           workspace: shared-data
@@ -369,8 +373,8 @@ spec:
       params:
         - name: contextDir
           value: "$(tasks.setup.results.contextDir)"
-        - name: project
-          value: "$(params.project)"
+        - name: gitopsProject
+          value: "$(params.gitopsProject)"
       runAfter: 
         - git-update-internal-repo-and-push
   finally:

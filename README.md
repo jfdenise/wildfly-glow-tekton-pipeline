@@ -1,5 +1,7 @@
 # wildfly-glow-tekton-pipeline
 
+* oc new-project eap-pipeline
+
 * Create secret for SSH KEY:
 oc create secret generic my-ssh-credentials --from-file=known_hosts=/home/jdenise/.ssh/known_hosts --from-file=id_ed25519=/home/jdenise/.ssh/id_ed25519 --from-file=ssh-privatekey=/home/jdenise/.ssh/id_ed25519 --type=kubernetes.io/ssh-auth
 
@@ -9,9 +11,7 @@ oc create secret generic my-ssh-credentials --from-file=known_hosts=/home/jdenis
 
 * Add tekton and gitops operators
 
-* oc new-project eap-service
-
-* oc apply -f of all task/pipeline
+* task/pipeline
 oc apply -f wildfly-check-image-exists.yaml
 oc apply -f wildfly-cleanup.yaml
 oc apply -f wildfly-deploy.yaml
@@ -20,18 +20,19 @@ oc apply -f wildfly-glow-pipeline.yaml
 oc apply -f wildfly-provision.yaml
 oc apply -f wildfly-setup.yaml
 
-* Create role binding to allow tocreate image Stream in openshift-gitops
+* Create role binding to allow to create image Stream in openshift-gitops
 oc apply -f rolebinding.yaml
 
-Can be done in web console:
-User Management/RoleBindings
-Create Role binding
-Cluster wide role binding
-Name: pipeline-eap-server
-Role Name: admin
-Subject ServiceAccount
-Subject Namespace: eap-service
-Subject Name: pipeline
+* Create role binding to allow to create resources in the user-project
 
-* Start the first demo
+oc apply -f rolebinding-argocd.yaml
+
+* Create the user project
+
+oc new-project user-project
+
+* Start the first demo:
+If argoCD:
+oc create -f demo-build-argo-cd.yaml
+If not:
 oc create -f demo-build.yaml
