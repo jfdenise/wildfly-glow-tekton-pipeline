@@ -6,11 +6,13 @@ spec:
   params:
    - name: contextDir
      type: string
+   - name: contentLocation
+     type: string
+   - name: targetDirectory
+     type: string
   workspaces:
     - name: sources
       description: The src dir
-    - name: app-repo
-      description: The app repo
   steps:
     - name: provision
       securityContext:
@@ -19,34 +21,14 @@ spec:
       env:
         - name: WORKSPACE_SRC_PATH
           value: $(workspaces.sources.path)/$(params.contextDir)
-        - name: WORKSPACE_APP_REPO_PATH
-          value: $(workspaces.app-repo.path)/$(params.contextDir)
       script: |
         #!/usr/bin/env bash
-        set -eu
-        srcDir="$WORKSPACE_APP_REPO_PATH"
-        files=`ls $srcDir/*.*`
-        deployment=""
-        for eachfile in $files
-        do
-          if [[ $eachfile =~ .*.war ]] || [[ $eachfile =~ .*.jar ]] || [[ $eachfile =~ .*.ear ]]; then
-            deployment="$deployment $eachfile"
-          fi
-        done
-        
-        if [ -n "${deployment}" ]; then
-            echo "Retrieving WildFly Glow to provision"            
-            curl --insecure https://repository.jboss.org/nexus/content/repositories/snapshots/org/wildfly/glow/wildfly-glow/1.0.7.Final-SNAPSHOT/wildfly-glow-1.0.7.Final-20240619.151141-16.zip -LO
-            unzip wildfly-glow*.zip -d .
-            glowDir=`find $PWD -type d -iname "wildfly-glow*"`
-            configFile=
-            if [ -f "$srcDir/glow.properties" ]; then
-              configFile="--config-file=$srcDir/glow.properties"
-            fi
-            # provision server
-            $glowDir/wildfly-glow scan $deployment --cloud --provision server --output-dir "$WORKSPACE_SRC_PATH/provisioning/server" $configFile
-            rm $WORKSPACE_SRC_PATH/provisioning/server/standalone/deployments/*.*
-        else
-            echo "No deployment to scan!"
-            exit 1
-        fi
+        set -eu        
+        echo "Retrieving Galleon to provision"
+        curl --insecure https://github.com/wildfly/galleon/releases/download/6.0.0.Final/galleon-6.0.0.Final.zip -LO
+        unzip galleon*.zip -d .
+        galleonCLIDir="$PWD/galleon-6.0.0.Final"
+        galleonDir="$WORKSPACE_SRC_PATH/$(params.contentLocation)/galleon"
+        # provision server
+        $galleonCLIDir/bin/galleon.sh provision "$galleonDir/provisioning.xml" --dir="$WORKSPACE_SRC_PATH/$(params.targetDirectory)/server"
+        echo Server provisioned in "$WORKSPACE_SRC_PATH/$(params.targetDirectory)"

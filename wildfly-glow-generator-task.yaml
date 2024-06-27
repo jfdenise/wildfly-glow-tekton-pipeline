@@ -28,8 +28,10 @@ spec:
       description: Where the generated content has been put
     - name: deploymentLocation
       description: Where the generated deployment content has been put
-    - name: dockerContext
-      description: The docker context
+    - name: serverDockerContext
+      description: The server image docker context
+    - name: appDockerContext
+      description: The app image docker context
     - name: appImage
       description: Application image
     - name: appName
@@ -109,10 +111,11 @@ spec:
         mkdir -p $WORKSPACE_SRC_PATH/internal-git-repo/deployments
         echo -n "internal-git-repo" > $(results.contentLocation.path)
         echo -n "deployment-git-repo" > $(results.deploymentLocation.path)
-        echo -n "docker/app/Dockerfile" > $(results.appDockerfile.path)
-        echo -n "docker/server/Dockerfile" > $(results.serverDockerfile.path)
+        echo -n "Dockerfile" > $(results.appDockerfile.path)
+        echo -n "Dockerfile" > $(results.serverDockerfile.path)
         # provisioning directory is required for both server and app image
-        echo -n "provisioning" > $(results.dockerContext.path)
+        echo -n "provisioning/docker/server" > $(results.serverDockerContext.path)
+        echo -n "provisioning/docker/app" > $(results.appDockerContext.path)
         if [ "$doNothing" = "true" ]; then
           echo "Nothing to do."
           echo -n "false" > $(results.needBuildAppImage.path)
@@ -136,7 +139,7 @@ spec:
             echo "app_name=$appName" >> "$WORKSPACE_SRC_PATH/internal-git-repo/app.properties"
 
             echo "Retrieving WildFly Glow"            
-            curl --insecure https://repository.jboss.org/nexus/content/repositories/snapshots/org/wildfly/glow/wildfly-glow/1.0.7.Final-SNAPSHOT/wildfly-glow-1.0.7.Final-20240619.151141-16.zip -LO
+            curl --insecure https://repository.jboss.org/nexus/content/repositories/snapshots/org/wildfly/glow/wildfly-glow/1.0.7.Final-SNAPSHOT/wildfly-glow-1.0.7.Final-20240627.151901-17.zip -LO
             unzip wildfly-glow*.zip -d .
             glowDir=`find $PWD -type d -iname "wildfly-glow*"`
             configFile=
@@ -156,9 +159,9 @@ spec:
               envFile="--build-env-file=$srcDir/vars.env"
             fi
             # generate provisioning and openshift resources
-            $glowDir/wildfly-glow scan $deployment --cloud --provision openshift_resources --output-dir "$WORKSPACE_SRC_PATH/scan-results" --properties="-Dorg.wildfly.glow.openshift.app.name=$appName -Dorg.wildfly.glow.openshift.server.image=$(params.serverImageRepository)" $configFile $cliScript $bashScript $envFile
+            $glowDir/wildfly-glow scan $deployment --cloud --provision openshift --dry-run --output-dir "$WORKSPACE_SRC_PATH/scan-results" --app-name=$appName $configFile $cliScript $bashScript $envFile
 
-            # Copy generated provisioning.xml
+            # Copy generated provisioning.xml and channel.yaml
             cp -r "$WORKSPACE_SRC_PATH/scan-results/galleon" "$WORKSPACE_SRC_PATH/internal-git-repo"
 
             # openshift resources
@@ -175,7 +178,7 @@ spec:
             echo -n "true" > $(results.needRefreshDeployment.path)
             
             # Retrieve the hash computed by Glow
-            imageProperties="$WORKSPACE_SRC_PATH"/scan-results/resources/images/images.properties
+            imageProperties="$WORKSPACE_SRC_PATH"/scan-results/docker/images.properties
             while IFS="=" read -r key value; do
             case "$key" in
              "server-image-tag") serverTag="$value" ;;
@@ -227,30 +230,17 @@ spec:
                 appVersion="1"
               fi
               appImage=$(params.applicationImageRepository):$newBranch-$appVersion-$(params.gitCommit)
-              # copy deployments in docker context
-              mkdir -p $WORKSPACE_SRC_PATH/provisioning
-              cp -r "$WORKSPACE_SRC_PATH/scan-results/deployments" "$WORKSPACE_SRC_PATH/provisioning"
-              # extensions, cli script and bash script packaged to be run at startup
-              if [ -d "$WORKSPACE_SRC_PATH/scan-results/extensions" ]; then
-                cp -r "$WORKSPACE_SRC_PATH/scan-results/extensions" "$WORKSPACE_SRC_PATH/provisioning"
-              fi
               
-              # Copy Docker file
-              mkdir -p "$WORKSPACE_SRC_PATH"/internal-git-repo/docker/app
-              cp "$WORKSPACE_SRC_PATH"/scan-results/resources/docker/app/Dockerfile $WORKSPACE_SRC_PATH/internal-git-repo/docker/app
-              mkdir -p $WORKSPACE_SRC_PATH/provisioning/docker/app
-              cp $WORKSPACE_SRC_PATH/internal-git-repo/docker/app/Dockerfile "$WORKSPACE_SRC_PATH/provisioning/docker/app"
-              # Copy Docker file
-              mkdir -p "$WORKSPACE_SRC_PATH"/internal-git-repo/docker/server
-              cp "$WORKSPACE_SRC_PATH"/scan-results/resources/docker/server/Dockerfile $WORKSPACE_SRC_PATH/internal-git-repo/docker/server
-              mkdir -p $WORKSPACE_SRC_PATH/provisioning/docker/server
-              cp $WORKSPACE_SRC_PATH/internal-git-repo/docker/server/Dockerfile $WORKSPACE_SRC_PATH/provisioning/docker/server
+              # Copy Docker context
+              sed -i "s|WILDFLY_GLOW_SERVER_IMAGE_REPOSITORY|$(params.serverImageRepository)|" "$WORKSPACE_SRC_PATH/scan-results/docker/app/Dockerfile"
+              cp -r "$WORKSPACE_SRC_PATH"/scan-results/docker $WORKSPACE_SRC_PATH/internal-git-repo/
+              mkdir -p "$WORKSPACE_SRC_PATH/provisioning/"
+              cp -r "$WORKSPACE_SRC_PATH"/internal-git-repo/docker "$WORKSPACE_SRC_PATH/provisioning/"
             fi
             if [ -f "$WORKSPACE_SRC_PATH/deployment-git-repo/resources/$appName-deployment.yaml" ]; then
-              # Update the deployment TODO MUST BE BETTER
-              sed -i "s|$appName:latest|$appImage|" "$WORKSPACE_SRC_PATH/deployment-git-repo/resources/$appName-deployment.yaml"
+              sed -i "s|WILDFLY_GLOW_APP_IMAGE_REPOSITORY:$appTag|$appImage|" "$WORKSPACE_SRC_PATH/deployment-git-repo/resources/$appName-deployment.yaml"
             else
-              sed -i "s|$appName:latest|$appImage|" "$WORKSPACE_SRC_PATH/deployment-git-repo/resources/$appName-statefulset.yaml"
+              sed -i "s|WILDFLY_GLOW_APP_IMAGE_REPOSITORY:$appTag|$appImage|" "$WORKSPACE_SRC_PATH/deployment-git-repo/resources/$appName-statefulset.yaml"
             fi
             echo "app_version=$appVersion" >> "$WORKSPACE_SRC_PATH/internal-git-repo/app.properties"
             echo "app_image=$appImage" >> "$WORKSPACE_SRC_PATH/internal-git-repo/app.properties"

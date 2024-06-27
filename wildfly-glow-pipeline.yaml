@@ -183,11 +183,13 @@ spec:
       params:
         - name: contextDir
           value: "$(tasks.setup.results.contextDir)"
+        - name: contentLocation
+          value: "$(tasks.wildfly-glow-generate.results.contentLocation)"
+        - name: targetDirectory
+          value: "$(tasks.wildfly-glow-generate.results.serverDockerContext)"
       workspaces:
         - name: sources
           workspace: shared-data
-        - name: app-repo
-          workspace: app-repo
       runAfter: 
         - check-server-image-exists
     - name: build-server-image
@@ -204,7 +206,7 @@ spec:
         - name: DOCKERFILE
           value: "$(tasks.wildfly-glow-generate.results.serverDockerfile)"
         - name: CONTEXT
-          value: "$(tasks.setup.results.contextDir)/$(tasks.wildfly-glow-generate.results.dockerContext)"
+          value: "$(tasks.setup.results.contextDir)/$(tasks.wildfly-glow-generate.results.serverDockerContext)"
         - name: TLSVERIFY
           value: "false"
       runAfter: 
@@ -228,7 +230,7 @@ spec:
         - name: DOCKERFILE
           value: "$(tasks.wildfly-glow-generate.results.appDockerfile)"
         - name: CONTEXT
-          value: "$(tasks.setup.results.contextDir)/$(tasks.wildfly-glow-generate.results.dockerContext)"
+          value: "$(tasks.setup.results.contextDir)/$(tasks.wildfly-glow-generate.results.appDockerContext)"
         - name: TLSVERIFY
           value: "false"
       runAfter: 
