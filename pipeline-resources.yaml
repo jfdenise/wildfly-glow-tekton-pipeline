@@ -1,0 +1,985 @@
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: glow-pipeline-data
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: wildfly-argocd-resource-generator-task
+spec:
+  params:
+   - name: gitRepo
+     type: string
+   - name: gitRevision
+     type: string
+     default: ""
+   - name: contextDir
+     type: string
+   - name: appName
+     type: string
+   - name: userProject
+     type: string
+  workspaces:
+    - name: sources
+      description: The src dir
+  steps:
+    - name: generate
+      securityContext:
+        runAsUser: 0
+      image: "redhat/ubi8-minimal"
+      env:
+        - name: WORKSPACE_SRC_PATH
+          value: $(workspaces.sources.path)/$(params.contextDir)
+      script: |
+        #!/usr/bin/env bash
+        mkdir -p "$WORKSPACE_SRC_PATH/deployment-git-repo/resources"
+        if [ -n "$(params.userProject)" ]; then
+          echo "apiVersion: argoproj.io/v1alpha1" > "$WORKSPACE_SRC_PATH/deployment-git-repo/argocd.yaml"
+          echo "kind: Application" >> "$WORKSPACE_SRC_PATH/deployment-git-repo/argocd.yaml"
+          echo "metadata:" >> "$WORKSPACE_SRC_PATH/deployment-git-repo/argocd.yaml"
+          echo "  name: $appName" >> "$WORKSPACE_SRC_PATH/deployment-git-repo/argocd.yaml"
+          echo "  namespace: openshift-gitops" >> "$WORKSPACE_SRC_PATH/deployment-git-repo/argocd.yaml"
+          echo "spec:" >> "$WORKSPACE_SRC_PATH/deployment-git-repo/argocd.yaml"
+          echo "  destination:" >> "$WORKSPACE_SRC_PATH/deployment-git-repo/argocd.yaml"
+          echo "    namespace: $(params.userProject)" >> "$WORKSPACE_SRC_PATH/deployment-git-repo/argocd.yaml"
+          echo "    server: https://kubernetes.default.svc" >> "$WORKSPACE_SRC_PATH/deployment-git-repo/argocd.yaml"
+          echo "  project: default" >> "$WORKSPACE_SRC_PATH/deployment-git-repo/argocd.yaml"
+          echo "  source: " >> "$WORKSPACE_SRC_PATH/deployment-git-repo/argocd.yaml"
+          echo "    path: resources" >> "$WORKSPACE_SRC_PATH/deployment-git-repo/argocd.yaml"
+          echo "    repoURL: https://$(params.gitRepo)" >> "$WORKSPACE_SRC_PATH/deployment-git-repo/argocd.yaml"
+          if [ -n $(params.gitRevision) ]; then
+            echo "    targetRevision: $(params.gitRevision)" >> "$WORKSPACE_SRC_PATH/deployment-git-repo/argocd.yaml"
+          fi
+          echo "  syncPolicy: " >> "$WORKSPACE_SRC_PATH/deployment-git-repo/argocd.yaml"
+          echo "    automated:" >> "$WORKSPACE_SRC_PATH/deployment-git-repo/argocd.yaml"
+          echo "      prune: true" >> "$WORKSPACE_SRC_PATH/deployment-git-repo/argocd.yaml"
+          echo "      selfHeal: false" >> "$WORKSPACE_SRC_PATH/deployment-git-repo/argocd.yaml"
+          echo "    syncOptions:" >> "$WORKSPACE_SRC_PATH/deployment-git-repo/argocd.yaml"
+          echo "    - CreateNamespace=false" >> "$WORKSPACE_SRC_PATH/deployment-git-repo/argocd.yaml"
+          
+          echo "Argo CD Application file created in $WORKSPACE_SRC_PATH/deployment-git-repo/argocd.yaml"
+        fi
+---
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: wildfly-check-image-exists-task
+spec:
+  params:
+      - name: image
+        type: string
+  results:
+    - name: exists
+      description: Does the image exists
+  steps:
+    - name: check-image
+      securityContext:
+        runAsUser: 0
+      image: "quay.io/skopeo/stable:v1"
+      script: |
+        failure=
+        skopeo inspect docker://$(params.image) || failure="true"
+        if [ "$failure" = "true" ]; then
+          echo "The image $(params.image) doesn't exist."
+          echo -n "false" > $(results.exists.path)
+        else
+          echo "The image $(params.image) exists."
+          echo -n "true" > $(results.exists.path)
+        fi
+---
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: wildfly-cleanup-task
+spec:
+  params:
+    - name: contextDir
+      type: string
+  workspaces:
+    - name: sources
+      description: The src dir
+    - name: internal-repo
+      description: The pulled internal repo
+      optional: true
+    - name: app-repo
+      description: The pulled app repo
+      optional: true
+  steps:
+    - name: cleanup
+      securityContext:
+        runAsUser: 0
+      image: "redhat/ubi8-minimal"
+      env:
+        - name: WORKSPACE_SRC_PATH
+          value: $(workspaces.sources.path)
+        - name: WORKSPACE_INTERNAL_REPO_PATH
+          value: $(workspaces.internal-repo.path)
+        - name: WORKSPACE_APP_REPO_PATH
+          value: $(workspaces.app-repo.path)
+      script: |
+        echo "Deleting context $WORKSPACE_SRC_PATH/$dir"
+        rm -rf "$WORKSPACE_SRC_PATH/$(params.contextDir)"
+        if [ -d "$WORKSPACE_INTERNAL_REPO_PATH" ]; then
+         echo "Deleting context $WORKSPACE_INTERNAL_REPO_PATH/$dir"
+         rm -rf "$WORKSPACE_INTERNAL_REPO_PATH/$(params.contextDir)"
+        fi
+        if [ -d "$WORKSPACE_APP_REPO_PATH" ]; then
+         echo "Deleting context $WORKSPACE_APP_REPO_PATH/$dir"
+         rm -rf "$WORKSPACE_APP_REPO_PATH/$(params.contextDir)"
+        fi
+---
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: wildfly-deploy-task
+spec:
+  params:
+    - name: contextDir
+      description: Context dir
+    - name: gitopsProject
+      description: GitOps project
+  workspaces:
+    - name: internal-deployment-repo
+      description: The internal deployment repo    
+  steps:
+    - name: deploy
+      securityContext:
+        runAsUser: 0
+      image: "image-registry.openshift-image-registry.svc:5000/openshift/cli:latest"
+      script: |
+        if [ -n "$(params.gitopsProject)" ]; then
+          oc project $(params.gitopsProject)
+          oc project
+          oc apply -f $(workspaces.internal-deployment-repo.path)/$(params.contextDir)/argocd.yaml
+          echo "ArgoCD application has been created"
+        else
+          files=`ls $(workspaces.internal-deployment-repo.path)/$(params.contextDir)/resources/*.yaml`
+          for eachfile in $files
+          do
+            oc apply -f "$eachfile"
+          done
+          echo "Application has been deployed"
+        fi
+---
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: wildfly-detect-openshift-task
+spec:
+  results:
+    - name: openshift
+      description: True if that is openshift
+  steps:
+    - name: check-openshift
+      securityContext:
+        runAsUser: 0
+      image: "image-registry.openshift-image-registry.svc:5000/openshift/cli:latest"
+      script: |
+        res=`oc api-resources --api-group=route.openshift.io`
+        if [[ "$res" =~  .*"route.openshift.io/" ]]; then
+          echo "Openshift cluster"
+          echo -n "true" > $(results.openshift.path)
+        else
+          echo "Not Openshift cluster"
+          echo -n "false" > $(results.openshift.path)
+        fi
+---
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: wildfly-glow-generator-task
+spec:
+  params:
+   - name: gitRepo
+     type: string
+   - name: gitRevision
+     type: string
+     default: ""
+   - name: gitCommit
+     type: string
+   - name: gitCommitterDate
+     type: string
+   - name: contextDir
+     type: string
+   - name: newBranch
+     type: string
+   - name: "applicationImageRepository"
+     type: string
+   - name: "serverImageRepository"
+     type: string
+   - name: "openshift"
+     type: string
+  results:
+    - name: contentLocation
+      description: Where the generated content has been put
+    - name: deploymentLocation
+      description: Where the generated deployment content has been put
+    - name: serverDockerContext
+      description: The server image docker context
+    - name: appDockerContext
+      description: The app image docker context
+    - name: appImage
+      description: Application image
+    - name: appName
+      description: Application name
+    - name: serverImage
+      description: Server image
+    - name: needBuildServerImage
+      description: do we need to build the server image
+    - name: needBuildAppImage
+      description: do we need to build the app image
+    - name: needRefreshDeployment
+      description: do we need to push to the deployment branch
+    - name: serverDockerfile
+      description: where the docker file is located
+    - name: appDockerfile
+      description: where the docker file is located
+  workspaces:
+    - name: sources
+      description: The src dir
+    - name: app-repo
+      description: The app repo
+    - name: current-repo
+      description: The current internal repo
+  steps:
+    - name: scan
+      securityContext:
+        runAsUser: 0
+      image: "quay.io/wildfly/wildfly-runtime:latest"
+      env:
+        - name: WORKSPACE_SRC_PATH
+          value: $(workspaces.sources.path)/$(params.contextDir)
+        - name: WORKSPACE_APP_REPO_PATH
+          value: $(workspaces.app-repo.path)/$(params.contextDir)
+        - name: WORKSPACE_CURRENT_REPO_PATH
+          value: $(workspaces.current-repo.path)/$(params.contextDir)
+      script: |
+        #!/usr/bin/env bash
+        set -eu
+        srcDir="$WORKSPACE_APP_REPO_PATH"
+        files=`ls $srcDir/*.*`
+        deployment=""
+        ls -l $srcDir
+        echo "Internal repo content"
+        ls -l $WORKSPACE_CURRENT_REPO_PATH
+        
+        gitURI=$(params.gitRepo)
+        newBranch=$(params.newBranch)
+        appName=${gitURI##*/}-$(params.gitRevision)
+        echo -n "$appName" > $(results.appName.path)
+        
+        appVersion=
+        doNothing="false"
+        appImage=
+        if [ -f "$WORKSPACE_CURRENT_REPO_PATH/app.properties" ]; then
+          while IFS="=" read -r key value; do
+            case "$key" in
+             "app_version") 
+               appVersion="$value" ;;
+             "git_commit") 
+               currentCommit="$value" 
+               if [ "$currentCommit" = "$(params.gitCommit)" ]; then           
+                echo -n "false" > $(results.needBuildAppImage.path)
+                echo -n "false" > $(results.needBuildServerImage.path)
+                echo "No change in user repository."
+                doNothing="true"
+               fi
+               ;;
+             "app_image") 
+               appImage="$value" 
+               echo -n "$appImage" > $(results.appImage.path) ;;
+             "server_image") 
+               serverImage="$value" 
+               echo -n "$serverImage" > $(results.serverImage.path) ;;
+            esac
+          done < "$WORKSPACE_CURRENT_REPO_PATH/app.properties"
+        fi
+        mkdir -p $WORKSPACE_SRC_PATH/internal-git-repo/deployments
+        echo -n "internal-git-repo" > $(results.contentLocation.path)
+        echo -n "deployment-git-repo" > $(results.deploymentLocation.path)
+        echo -n "Dockerfile" > $(results.appDockerfile.path)
+        echo -n "Dockerfile" > $(results.serverDockerfile.path)
+        # provisioning directory is required for both server and app image
+        echo -n "provisioning/docker/server" > $(results.serverDockerContext.path)
+        echo -n "provisioning/docker/app" > $(results.appDockerContext.path)
+        if [ "$doNothing" = "true" ]; then
+          echo "Nothing to do."
+          echo -n "false" > $(results.needBuildAppImage.path)
+          echo -n "false" > $(results.needBuildServerImage.path)
+          echo -n "false" > $(results.needRefreshDeployment.path)
+          exit 0
+        fi
+        for eachfile in $files
+        do
+          if [[ $eachfile =~ .*.war ]] || [[ $eachfile =~ .*.jar ]] || [[ $eachfile =~ .*.ear ]]; then
+            deployment="$deployment $eachfile"
+          fi
+        done
+
+        if [ -n "${deployment}" ]; then
+
+            echo "git_repo=$(params.gitRepo)" > "$WORKSPACE_SRC_PATH/internal-git-repo/app.properties"
+            echo "git_revision=$(params.gitRevision)" >> "$WORKSPACE_SRC_PATH/internal-git-repo/app.properties"
+            echo "git_commit=$(params.gitCommit)" >> "$WORKSPACE_SRC_PATH/internal-git-repo/app.properties"
+            echo "git_committer_date=$(params.gitCommitterDate)" >> "$WORKSPACE_SRC_PATH/internal-git-repo/app.properties"
+            echo "app_name=$appName" >> "$WORKSPACE_SRC_PATH/internal-git-repo/app.properties"
+
+            echo "Retrieving WildFly Glow"            
+            curl --insecure https://github.com/wildfly/wildfly-glow/releases/download/1.1.0.Final/wildfly-glow-1.1.0.Final.zip -LO
+            unzip wildfly-glow*.zip -d .
+            glowDir=`find $PWD -type d -iname "wildfly-glow*"`
+            configFile=
+            if [ -f "$srcDir/glow.properties" ]; then
+              configFile="--config-file=$srcDir/glow.properties"
+            fi
+            cliScript=
+            if [ -f "$srcDir/script.cli" ]; then
+              cliScript="--cli-script=$srcDir/script.cli"
+            fi
+            bashScript=
+            if [ -f "$srcDir/init.sh" ]; then
+              bashScript="--init-script=$srcDir/init.sh"
+            fi
+            envFile=
+            if [ -f "$srcDir/vars.env" ]; then
+              envFile="--build-env-file=$srcDir/vars.env"
+            fi
+            # generate provisioning and openshift resources
+            $glowDir/wildfly-glow scan $deployment --cloud --provision openshift --dry-run --output-dir "$WORKSPACE_SRC_PATH/scan-results" --app-name=$appName $configFile $cliScript $bashScript $envFile
+
+            # Copy generated provisioning.xml and channel.yaml
+            cp -r "$WORKSPACE_SRC_PATH/scan-results/galleon" "$WORKSPACE_SRC_PATH/internal-git-repo"
+
+            # openshift resources
+            mkdir -p "$WORKSPACE_SRC_PATH/deployment-git-repo/resources"
+            cp "$WORKSPACE_SRC_PATH"/scan-results/resources/deployment/*.yaml "$WORKSPACE_SRC_PATH/deployment-git-repo/resources"
+            if [ -d "$WORKSPACE_SRC_PATH/scan-results/resources/deployers" ]; then
+              cp "$WORKSPACE_SRC_PATH"/scan-results/resources/deployers/*.yaml "$WORKSPACE_SRC_PATH/deployment-git-repo/resources"
+            fi
+            if [ ! "$(params.openshift)" = "true" ]; then
+              if [ -f "$WORKSPACE_SRC_PATH/deployment-git-repo/resources/$appName-route.yaml" ]; then
+                rm "$WORKSPACE_SRC_PATH/deployment-git-repo/resources/$appName-route.yaml"
+              fi
+            fi
+            echo -n "true" > $(results.needRefreshDeployment.path)
+            
+            # Retrieve the hash computed by Glow
+            imageProperties="$WORKSPACE_SRC_PATH"/scan-results/docker/images.properties
+            while IFS="=" read -r key value; do
+            case "$key" in
+             "server-image-tag") serverTag="$value" ;;
+             "app-image-tag") appTag="$value" ;;
+            esac
+            done < "$imageProperties"
+
+            serverImage=$(params.serverImageRepository):$serverTag
+            echo -n "$serverImage" > $(results.serverImage.path)
+            echo "$serverTag serverHash" >> $WORKSPACE_SRC_PATH/internal-git-repo/app-checksum.chk
+            echo "$appTag appHash" >> $WORKSPACE_SRC_PATH/internal-git-repo/app-checksum.chk
+            echo "$serverTag serverHash" >> $WORKSPACE_SRC_PATH/internal-git-repo/server-checksum.chk
+
+            # We need to build the server image if no checksum file exists or is different
+            buildServerImage="true"
+            if [ -f "$WORKSPACE_CURRENT_REPO_PATH/server-checksum.chk" ]; then
+              original=($(md5sum $WORKSPACE_CURRENT_REPO_PATH/server-checksum.chk))
+              newOne=($(md5sum $WORKSPACE_SRC_PATH/internal-git-repo/server-checksum.chk))
+              echo "server original $original newOne $newOne"
+              echo "ORIGINAL"
+              cat $WORKSPACE_CURRENT_REPO_PATH/server-checksum.chk
+              echo "NEWONE"
+              cat $WORKSPACE_SRC_PATH/internal-git-repo/server-checksum.chk
+              if [ "$original" = "$newOne" ]; then
+                buildServerImage="false"
+              fi
+            fi
+            echo -n "$buildServerImage" > $(results.needBuildServerImage.path)
+            # We need to build the app image if no checksum file exists or is different
+            buildAppImage="true"
+            if [ -f "$WORKSPACE_CURRENT_REPO_PATH/app-checksum.chk" ]; then
+              original=($(md5sum $WORKSPACE_CURRENT_REPO_PATH/app-checksum.chk))
+              newOne=($(md5sum $WORKSPACE_SRC_PATH/internal-git-repo/app-checksum.chk))
+              echo "app original $original newOne $newOne"
+              echo "ORIGINAL"
+              cat $WORKSPACE_CURRENT_REPO_PATH/app-checksum.chk
+              echo "NEWONE"
+              cat $WORKSPACE_SRC_PATH/internal-git-repo/app-checksum.chk
+              if [ "$original" = "$newOne" ]; then
+               buildAppImage="false"
+              fi
+            fi
+            echo -n "$buildAppImage" > $(results.needBuildAppImage.path)
+            if [ $buildAppImage = "true" ]; then
+              echo "A new app image is required"
+              if [ -n "$appVersion" ]; then
+                appVersion="$(($appVersion + 1))"
+              else
+                appVersion="1"
+              fi
+              appImage=$(params.applicationImageRepository):$newBranch-$appVersion-$(params.gitCommit)
+              
+              # Copy Docker context
+              sed -i "s|WILDFLY_GLOW_SERVER_IMAGE_REPOSITORY|$(params.serverImageRepository)|" "$WORKSPACE_SRC_PATH/scan-results/docker/app/Dockerfile"
+              cp -r "$WORKSPACE_SRC_PATH"/scan-results/docker $WORKSPACE_SRC_PATH/internal-git-repo/
+              mkdir -p "$WORKSPACE_SRC_PATH/provisioning/"
+              cp -r "$WORKSPACE_SRC_PATH"/internal-git-repo/docker "$WORKSPACE_SRC_PATH/provisioning/"
+            fi
+            if [ -f "$WORKSPACE_SRC_PATH/deployment-git-repo/resources/$appName-deployment.yaml" ]; then
+              sed -i "s|WILDFLY_GLOW_APP_IMAGE_REPOSITORY:$appTag|$appImage|" "$WORKSPACE_SRC_PATH/deployment-git-repo/resources/$appName-deployment.yaml"
+            else
+              sed -i "s|WILDFLY_GLOW_APP_IMAGE_REPOSITORY:$appTag|$appImage|" "$WORKSPACE_SRC_PATH/deployment-git-repo/resources/$appName-statefulset.yaml"
+            fi
+            echo "app_version=$appVersion" >> "$WORKSPACE_SRC_PATH/internal-git-repo/app.properties"
+            echo "app_image=$appImage" >> "$WORKSPACE_SRC_PATH/internal-git-repo/app.properties"
+            echo "server_image=$serverImage" >> "$WORKSPACE_SRC_PATH/internal-git-repo/app.properties"
+            echo -n "$appImage" > $(results.appImage.path)
+        else
+            echo "No deployment to scan!"
+            exit 1
+        fi
+---
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: wildfly-provision-task
+spec:
+  params:
+   - name: contextDir
+     type: string
+   - name: contentLocation
+     type: string
+   - name: targetDirectory
+     type: string
+  workspaces:
+    - name: sources
+      description: The src dir
+  steps:
+    - name: provision
+      securityContext:
+        runAsUser: 0
+      image: "quay.io/wildfly/wildfly-runtime:latest"
+      env:
+        - name: WORKSPACE_SRC_PATH
+          value: $(workspaces.sources.path)/$(params.contextDir)
+      script: |
+        #!/usr/bin/env bash
+        set -eu        
+        echo "Retrieving Galleon to provision"
+        curl --insecure https://github.com/wildfly/galleon/releases/download/6.0.0.Final/galleon-6.0.0.Final.zip -LO
+        unzip galleon*.zip -d .
+        galleonCLIDir="$PWD/galleon-6.0.0.Final"
+        galleonDir="$WORKSPACE_SRC_PATH/$(params.contentLocation)/galleon"
+        # provision server
+        $galleonCLIDir/bin/galleon.sh provision "$galleonDir/provisioning.xml" --dir="$WORKSPACE_SRC_PATH/$(params.targetDirectory)/server"
+        echo Server provisioned in "$WORKSPACE_SRC_PATH/$(params.targetDirectory)"
+---
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: wildfly-setup-task
+spec:
+  params:
+    - name: gitRepo
+      type: string
+    - name: gitRepoOwner
+      type: string
+    - name: gitRepoProject
+      type: string
+    - name: gitRevision
+      type: string
+  results:
+    - name: contextDir
+      description: The created dir
+    - name: appBranch
+      description: the app Branch
+  workspaces:
+    - name: sources
+      description: The src dir
+    - name: internal-repo
+      description: The pulled internal repo
+      optional: true
+    - name: app-repo
+      description: The pulled app repo
+      optional: true
+  steps:
+    - name: create-context
+      securityContext:
+        runAsUser: 0
+      image: "redhat/ubi8"
+      env:
+        - name: WORKSPACE_SRC_PATH
+          value: $(workspaces.sources.path)
+        - name: WORKSPACE_INTERNAL_REPO_PATH
+          value: $(workspaces.internal-repo.path)
+        - name: WORKSPACE_APP_REPO_PATH
+          value: $(workspaces.app-repo.path)
+      script: |
+        dir=`uuidgen`
+        echo "Creating context $WORKSPACE_SRC_PATH/$dir"
+        mkdir -p "$WORKSPACE_SRC_PATH/$dir"
+        if [ -d "$WORKSPACE_INTERNAL_REPO_PATH" ]; then
+          echo "Creating context $WORKSPACE_INTERNAL_REPO_PATH/$dir"
+          mkdir -p "$WORKSPACE_INTERNAL_REPO_PATH/$dir"
+        fi
+        if [ -d "$WORKSPACE_APP_REPO_PATH" ]; then
+          echo "Creating context $WORKSPACE_APP_REPO_PATH/$dir"
+          mkdir -p "$WORKSPACE_APP_REPO_PATH/$dir"
+        fi
+        echo -n "$dir" > $(results.contextDir.path)
+        gitURI=$(params.gitRepo)/$(params.gitRepoOwner)/$(params.gitRepoProject)
+        gitId=$gitURI/revision/$(params.gitRevision)
+        newBranch=`tr -s .:@#/ _ <<< "$gitId"`
+        echo -n "$newBranch" > $(results.appBranch.path)
+---
+apiVersion: tekton.dev/v1
+kind: Pipeline
+metadata:
+  name: wildfly-glow-pipeline
+spec:
+  params:
+    - name: gitRepo
+    - name: gitRepoOwner
+    - name: gitRepoProject
+    - name: gitRevision
+      default: ""
+    - name: userProject
+      default: ""
+    - name: gitopsProject
+      default: ""
+    - name: deploy
+      default: "true"
+    - name: "internalGitRepo"
+    - name: "applicationImageRepository"
+    - name: "serverImageRepository"
+  workspaces:
+    - name: shared-data
+    - name: ssh-creds
+    - name: internal-repo
+    - name: dockerconfig
+    - name: app-repo
+  tasks:
+    - name: setup
+      taskRef:
+        name: wildfly-setup-task
+      workspaces:
+        - name: sources
+          workspace: shared-data
+        - name: internal-repo
+          workspace: internal-repo
+        - name: app-repo
+          workspace: app-repo
+      params:
+        - name: gitRepo
+          value: $(params.gitRepo)
+        - name: gitRepoOwner
+          value: $(params.gitRepoOwner)
+        - name: gitRepoProject
+          value: "$(params.gitRepoProject)"
+        - name: gitRevision
+          value: "$(params.gitRevision)"
+    - name: identify-cluster
+      taskRef:
+        name: wildfly-detect-openshift-task
+      runAfter: 
+        - setup
+    - name: git-clone-app-repo
+      taskRef:
+        name: git-clone
+        kind: ClusterTask
+      workspaces:
+        - name: output
+          workspace: app-repo
+        - name: ssh-directory
+          workspace: ssh-creds
+      params:
+        - name: url
+          value: "git@$(params.gitRepo):$(params.gitRepoOwner)/$(params.gitRepoProject)"
+        - name: revision
+          value: "$(params.gitRevision)"
+        - name: subdirectory
+          value: "$(tasks.setup.results.contextDir)"
+      runAfter: 
+        - setup
+    - name: git-clone-internal-repo
+      taskRef:
+        name: git-clone
+        kind: ClusterTask
+      workspaces:
+        - name: output
+          workspace: internal-repo
+        - name: ssh-directory
+          workspace: ssh-creds
+      params:
+        - name: url
+          value: "$(params.internalGitRepo)"
+        - name: revision
+          value: "init"
+        - name: subdirectory
+          value: "$(tasks.setup.results.contextDir)"
+      runAfter: 
+        - setup
+    - name: setup-internal-repo
+      taskRef:
+        name: git-cli
+        kind: ClusterTask
+      params:
+        - name: GIT_USER_NAME
+          value: jfdenise
+        - name: GIT_USER_EMAIL
+          value: jfdenise@gmail.com
+        - name: GIT_SCRIPT
+          value: |
+           cd $(tasks.setup.results.contextDir) 
+           git config --global --add safe.directory /workspace/source/$(tasks.setup.results.contextDir)
+           newBranch=$(tasks.setup.results.appBranch)
+           exists=`git ls-remote --heads $(params.internalGitRepo) "refs/heads/${newBranch}" | wc -l`
+           if [ "${exists}" = "1" ]; then
+             echo "$newBranch already exists"
+             git fetch origin "$newBranch"
+             git checkout "$newBranch"
+           fi
+      workspaces:
+        - name: source
+          workspace: internal-repo
+        - name: ssh-directory
+          workspace: ssh-creds
+      runAfter: 
+        -  git-clone-internal-repo
+    - name: wildfly-glow-generate
+      taskRef:
+        name: wildfly-glow-generator-task
+      params:
+        - name: gitRepo
+          value: "$(params.gitRepo)/$(params.gitRepoOwner)/$(params.gitRepoProject)"
+        - name: gitRevision
+          value: "$(params.gitRevision)"
+        - name: gitCommit
+          value: "$(tasks.git-clone-app-repo.results.commit)"
+        - name: gitCommitterDate
+          value: "$(tasks.git-clone-app-repo.results.committer-date)"
+        - name: contextDir
+          value: "$(tasks.setup.results.contextDir)"
+        - name: newBranch
+          value: "$(tasks.setup.results.appBranch)"
+        - name: userProject
+          value: "$(params.userProject)"
+        - name: applicationImageRepository
+          value: "$(params.applicationImageRepository)"
+        - name: serverImageRepository
+          value: "$(params.serverImageRepository)"
+        - name: openshift
+          value: "$(tasks.identify-cluster.results.openshift)"
+      workspaces:
+        - name: sources
+          workspace: shared-data
+        - name: current-repo
+          workspace: internal-repo
+        - name: app-repo
+          workspace: app-repo
+      runAfter: 
+        - git-clone-app-repo
+        - setup-internal-repo
+        - identify-cluster
+    - name: check-app-image-exists
+      taskRef:
+        name: wildfly-check-image-exists-task
+# We can't enable this condition because if this task is not executed it will not produce results executed by following ones that will be not executed
+#      when:
+#      - input: "$(tasks.wildfly-glow-generate.results.needBuildAppImage)"
+#        operator: in
+#        values: ["true"]
+      params:
+        - name: image
+          value: "$(tasks.wildfly-glow-generate.results.appImage)"
+      runAfter: 
+        - wildfly-glow-generate
+    - name: check-server-image-exists
+      taskRef:
+        name: wildfly-check-image-exists-task
+# We can't enable this condition because if this task is not executed it will not produce results executed by following ones that will be not executed
+     # when:
+     # - input: "$(tasks.wildfly-glow-generate.results.needBuildServerImage)"
+     #   operator: in
+     #   values: ["true"]
+      params:
+        - name: image
+          value: "$(tasks.wildfly-glow-generate.results.serverImage)"
+      runAfter: 
+        - wildfly-glow-generate
+    - name: wildfly-provision
+      taskRef:
+        name: wildfly-provision-task
+      when:
+      - input: "$(tasks.check-server-image-exists.results.exists)"
+        operator: in
+        values: ["false"]
+      params:
+        - name: contextDir
+          value: "$(tasks.setup.results.contextDir)"
+        - name: contentLocation
+          value: "$(tasks.wildfly-glow-generate.results.contentLocation)"
+        - name: targetDirectory
+          value: "$(tasks.wildfly-glow-generate.results.serverDockerContext)"
+      workspaces:
+        - name: sources
+          workspace: shared-data
+      runAfter: 
+        - check-server-image-exists
+    - name: build-server-image
+      taskRef:
+        name: buildah
+        kind: ClusterTask
+      when:
+      - input: "$(tasks.check-server-image-exists.results.exists)"
+        operator: in
+        values: ["false"]
+      params:
+        - name: IMAGE
+          value: "$(tasks.wildfly-glow-generate.results.serverImage)"
+        - name: DOCKERFILE
+          value: "$(tasks.wildfly-glow-generate.results.serverDockerfile)"
+        - name: CONTEXT
+          value: "$(tasks.setup.results.contextDir)/$(tasks.wildfly-glow-generate.results.serverDockerContext)"
+        - name: TLSVERIFY
+          value: "false"
+      runAfter: 
+        - wildfly-provision
+      workspaces:
+        - name: source
+          workspace: shared-data
+        - name: dockerconfig
+          workspace: dockerconfig
+    - name: build-app-image
+      taskRef:
+        name: buildah
+        kind: ClusterTask
+      when:
+      - input: "$(tasks.check-app-image-exists.results.exists)"
+        operator: in
+        values: ["false"]
+      params:
+        - name: IMAGE
+          value: "$(tasks.wildfly-glow-generate.results.appImage)"
+        - name: DOCKERFILE
+          value: "$(tasks.wildfly-glow-generate.results.appDockerfile)"
+        - name: CONTEXT
+          value: "$(tasks.setup.results.contextDir)/$(tasks.wildfly-glow-generate.results.appDockerContext)"
+        - name: TLSVERIFY
+          value: "false"
+      runAfter: 
+        - build-server-image
+        - check-app-image-exists
+      workspaces:
+        - name: source
+          workspace: shared-data
+        - name: dockerconfig
+          workspace: dockerconfig
+    - name: generate-argocd-resource
+      taskRef:
+        name: wildfly-argocd-resource-generator-task
+      params:
+        - name: gitRepo
+          value: "$(params.gitRepo)/$(params.gitRepoOwner)/$(params.gitRepoProject)"
+        - name: gitRevision
+          value: "$(params.gitRevision)_deployment"
+        - name: contextDir
+          value: "$(tasks.setup.results.contextDir)"
+        - name: userProject
+          value: "$(params.userProject)"
+        - name: appName
+          value: "$(tasks.wildfly-glow-generate.results.appName)"
+      workspaces:
+        - name: sources
+          workspace: shared-data
+      when:
+      - input: "$(tasks.wildfly-glow-generate.results.needRefreshDeployment)"
+        operator: in
+        values: ["true"]
+      runAfter: 
+        - wildfly-glow-generate
+    - name: git-update-deployment-repo-and-push
+      taskRef:
+        name: git-cli
+        kind: ClusterTask
+      when:
+      - input: "$(tasks.wildfly-glow-generate.results.needRefreshDeployment)"
+        operator: in
+        values: ["true"]
+      params:
+        - name: GIT_USER_NAME
+          value: jfdenise
+        - name: GIT_USER_EMAIL
+          value: jfdenise@gmail.com
+        - name: GIT_SCRIPT
+          value: |
+           cd $(tasks.setup.results.contextDir) 
+           git config --global --add safe.directory /workspace/source/$(tasks.setup.results.contextDir)
+           rev=$(tasks.setup.results.appBranch)_deployment
+           userRev=$(params.gitRevision)_deployment
+           # Add the user_deployment repo
+           git remote add userRepo git@$(params.gitRepo):$(params.gitRepoOwner)/$(params.gitRepoProject)
+           git remote update userRepo
+
+           exists=`git ls-remote --heads $(params.internalGitRepo) "refs/heads/${rev}" | wc -l`
+           if [ "${exists}" = "1" ]; then
+             echo "A branch already exists"
+             git fetch origin "${rev}"
+             git checkout "${rev}"
+           else
+             git checkout -b init_internal_deployment --track origin/init
+             git checkout -b "${rev}"
+           fi
+           if [ -d "$(workspaces.input.path)/$(tasks.setup.results.contextDir)/$(tasks.wildfly-glow-generate.results.deploymentLocation)" ]; then
+             cp -r $(workspaces.input.path)/$(tasks.setup.results.contextDir)/$(tasks.wildfly-glow-generate.results.deploymentLocation)/* .
+           fi
+           # The user deployment branch
+           exists=`git ls-remote --heads userRepo "refs/heads/${userRev}" | wc -l`
+           if [ "${exists}" = "1" ]; then
+             echo "A branch already exists"
+             git fetch userRepo "${userRev}"
+             git branch "${userRev}" --track userRepo/"$userRev"
+           else
+             # Create a branch that we will use to push to the user space
+             git checkout -b user_init_internal --track userRepo/init
+             git checkout -b "$userRev"
+             # Switch back to the internal deployment branch
+             git checkout "${rev}"
+           fi
+           if [ -d "$(workspaces.input.path)/$(tasks.setup.results.contextDir)/$(tasks.wildfly-glow-generate.results.deploymentLocation)" ]; then
+             cp -r $(workspaces.input.path)/$(tasks.setup.results.contextDir)/$(tasks.wildfly-glow-generate.results.deploymentLocation)/* .
+           fi
+           ls -al .
+           git status
+           changes="$(git status --porcelain)"
+           if [ -n "$changes" ]; then
+             # Commit the changes
+             git add *
+             git commit -m "Commit from WildFly Glow pipeline. 
+             $changes"
+             commitId=`git rev-parse HEAD`
+             # Build the patch
+             git format-patch -1 HEAD --stdout > changes.patch
+             echo "Patch content"
+             cat changes.patch
+             
+             # Check if the patch can be applied to the user repo
+             git checkout $userRev
+             # Use 3way to ignore added files
+             res=$(git apply --3way changes.patch --check 2>&1)
+             if [[ "$res" =~  .*" with conflicts" ]]; then
+               echo "ERROR: Failure applying changes to $(params.gitRepo):$(params.gitRepoOwner)/$(params.gitRepoProject) branch $userRev"
+               echo "Conflicting patch generated in pipeline-conflict.patch file, make sure to manually merge the changes if needed."
+               mv changes.patch pipeline-conflict.patch
+               git add pipeline-conflict.patch
+               git commit -m "A conflict occured, check 'pipeline-conflict.patch' file, fix the conflict then call 'git apply pipeline-conflict.patch', delete the patch file then restart the pipeline"
+               git push userRepo $userRev
+               exit 1
+             else
+               rm changes.patch
+               echo "Success, can apply changes to $(params.gitRepo):$(params.gitRepoOwner)/$(params.gitRepoProject) branch $userRev "
+               git cherry-pick $commitId || echo "Empty commit, nothing to cherry-pick"
+               git push origin "${rev}"
+               git push userRepo $userRev
+             fi
+           fi           
+      workspaces:
+        - name: source
+          workspace: internal-repo
+        - name: input
+          workspace: shared-data
+        - name: ssh-directory
+          workspace: ssh-creds
+      runAfter: 
+        -  generate-argocd-resource
+        - build-app-image
+    - name: git-update-internal-repo-and-push
+      taskRef:
+        name: git-cli
+        kind: ClusterTask
+      params:
+        - name: GIT_USER_NAME
+          value: jfdenise
+        - name: GIT_USER_EMAIL
+          value: jfdenise@gmail.com
+        - name: GIT_SCRIPT
+          value: |
+           cd $(tasks.setup.results.contextDir) 
+           git config --global --add safe.directory /workspace/source/$(tasks.setup.results.contextDir)
+           rev=$(tasks.setup.results.appBranch)
+           exists=`git ls-remote --heads $(params.internalGitRepo) "refs/heads/${rev}" | wc -l`
+           if [ "${exists}" = "1" ]; then
+             echo "A branch already exists"
+             git fetch origin "$rev"
+             git checkout "$rev"
+           else
+             git checkout -b init_internal --track origin/init
+             git checkout -b "$rev"
+           fi
+           ls -al $(workspaces.input.path)/$(tasks.setup.results.contextDir)/$(tasks.wildfly-glow-generate.results.contentLocation)/
+           cp -r $(workspaces.input.path)/$(tasks.setup.results.contextDir)/$(tasks.wildfly-glow-generate.results.contentLocation)/* .
+           ls -al .
+           git status
+           if [ -n "$(git status --porcelain)" ]; then
+             git add *
+             git commit -m "Commit from WildFly Glow pipeline"
+             git push origin "$rev"
+           fi
+           # Checkout the deployment branch for the deploy. TO CLEAN!!!!
+           git checkout "${rev}"_deployment
+           echo CURRENT LOCATION: $PWD
+           ls -l
+      when:
+      - input: "$(tasks.wildfly-glow-generate.results.needRefreshDeployment)"
+        operator: in
+        values: ["true"]
+      workspaces:
+        - name: source
+          workspace: internal-repo
+        - name: input
+          workspace: shared-data
+        - name: ssh-directory
+          workspace: ssh-creds
+      runAfter: 
+        -  git-update-deployment-repo-and-push
+    - name: deploy
+      taskRef:
+        name: wildfly-deploy-task
+      when:
+      - input: "$(params.deploy)"
+        operator: in
+        values: ["true"]
+      - input: "$(tasks.wildfly-glow-generate.results.needRefreshDeployment)"
+        operator: in
+        values: ["true"]
+      workspaces:
+        - name: internal-deployment-repo
+          workspace: internal-repo
+      params:
+        - name: contextDir
+          value: "$(tasks.setup.results.contextDir)"
+        - name: gitopsProject
+          value: "$(params.gitopsProject)"
+      runAfter: 
+        - git-update-internal-repo-and-push
+  finally:
+    - name: cleanup
+      taskRef:
+        name: wildfly-cleanup-task
+      params:
+        - name: contextDir
+          value: "$(tasks.setup.results.contextDir)"
+      workspaces:
+        - name: sources
+          workspace: shared-data
+        - name: internal-repo
+          workspace: internal-repo
+        - name: app-repo
+          workspace: app-repo
+---
