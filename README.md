@@ -32,6 +32,12 @@ oc create -f pipeline-runs/demo-db-build.yaml
 
 #  Argo CD based deployment, requires a managed OpenShift cluster setup and pipeline runs
 
+* Create the user project
+
+oc new-project user-project
+
+* Create the pipeline project
+
 oc new-project wildfly-glow-pipeline
 
 * Create secrets and volumes:
@@ -53,10 +59,6 @@ oc apply -f rolebinding.yaml
 * Create role binding to allow to create resources in the user-project
 
 oc apply -f rolebinding-argocd.yaml
-
-* Create the user project
-
-oc new-project user-project
 
 * Run the pipeline for the kitchensink application
 

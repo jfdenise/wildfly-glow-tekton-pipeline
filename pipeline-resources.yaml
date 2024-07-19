@@ -45,7 +45,7 @@ spec:
           echo "apiVersion: argoproj.io/v1alpha1" > "$WORKSPACE_SRC_PATH/deployment-git-repo/argocd.yaml"
           echo "kind: Application" >> "$WORKSPACE_SRC_PATH/deployment-git-repo/argocd.yaml"
           echo "metadata:" >> "$WORKSPACE_SRC_PATH/deployment-git-repo/argocd.yaml"
-          echo "  name: $appName" >> "$WORKSPACE_SRC_PATH/deployment-git-repo/argocd.yaml"
+          echo "  name: $(params.appName)" >> "$WORKSPACE_SRC_PATH/deployment-git-repo/argocd.yaml"
           echo "  namespace: openshift-gitops" >> "$WORKSPACE_SRC_PATH/deployment-git-repo/argocd.yaml"
           echo "spec:" >> "$WORKSPACE_SRC_PATH/deployment-git-repo/argocd.yaml"
           echo "  destination:" >> "$WORKSPACE_SRC_PATH/deployment-git-repo/argocd.yaml"
