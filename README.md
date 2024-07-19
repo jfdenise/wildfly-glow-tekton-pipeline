@@ -37,7 +37,7 @@ oc new-project wildfly-glow-pipeline
 * Create secrets and volumes:
 
 oc create secret generic my-ssh-credentials --from-file=known_hosts=/home/jdenise/.ssh/known_hosts --from-file=id_ed25519=/home/jdenise/.ssh/id_ed25519 --from-file=ssh-privatekey=/home/jdenise/.ssh/id_ed25519 --type=kubernetes.io/ssh-auth
-oc create -f pvc-sources-glow.yaml
+
 oc create -f quay-secret.yaml
 
 * Add tekton and gitops operators
