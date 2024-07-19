@@ -47,6 +47,7 @@ oc create -f quay-secret.yaml
 oc apply -f pipeline-resources.yaml
 
 * Create role binding to allow to create image Stream in openshift-gitops
+
 oc apply -f rolebinding.yaml
 
 * Create role binding to allow to create resources in the user-project
